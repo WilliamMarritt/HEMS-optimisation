@@ -5,14 +5,15 @@ import numpy as np
 from config import *
 from data import *
 
-def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
-    hours = [t * delta for t in time_steps]
+def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec):
+    time_steps_96 = range(total_steps*2)
+    hours = [t * delta for t in time_steps_96]
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
     # --- Plot 1: Power Balance ---
-    chp_power = [u_res[t].varValue for t in time_steps]
-    grid_import = [I_res[t].varValue for t in time_steps]
+    chp_power = history_u
+    grid_import = history_I
 
     total_demand = []
     for t in time_steps:
@@ -23,8 +24,9 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
                 power = app["Power"]
                 duration = int(app["Slots"])
                 is_running = 0
+                
                 for look_back in range(duration):
-                    if (t - look_back) >= 0 and E_res[h, name, t - look_back].varValue > 0.9:
+                    if (t - look_back) >= 0 and history_E.get((h, name, t - look_back), 0) == 1:
                         is_running = 1
                 if is_running:
                     d_t += power
@@ -39,13 +41,14 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
 
     # --- Plot 2: Battery SoC and Grid Price ---
     ax2 = axes[1]
-    soc = [S_E_res[t].varValue for t in time_steps]
+    soc = history_soc_E
     line1 = ax2.plot(hours, soc, 'g-', label='Battery SoC (kWh)', linewidth=2)
     ax2.set_ylabel('Stored Energy (kWh)', color = 'b')
     ax2.tick_params(axis='y', labelcolor='b')
+    ax2.set_ylim(0, C_E)
 
     ax2_price = ax2.twinx()
-    line2 = ax2_price.plot(hours, grid_price, 'r--', label='Grid Price (£/kWh)', linewidth=2)
+    line2 = ax2_price.plot(hours, price_grid_elec, 'r--', label='Grid Price (£/kWh)', linewidth=2)
     ax2_price.set_ylabel('Grid Price (£/kWh)', color='r')
     ax2_price.tick_params(axis='y', labelcolor='r')
 
@@ -70,7 +73,7 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
             for h in homes:
                 duration = int(app["Slots"])
                 for look_back in range(duration):
-                    if (t - look_back) >= 0 and E_res[h, name, t-look_back].varValue > 0.9:
+                    if (t - look_back) >= 0 and history_E.get((h, name, t-look_back), 0) > 0.9:
                         count += 1 
                         break 
             
@@ -99,7 +102,7 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
     axes[2].set_ylim(0, ylim_top)  # Add some headroom above the peak
     axes[2].set_xlabel("Hour of Day")
     axes[2].set_xticks(range(0, 25, 1))
-    axes[2].set_title("Aggregate Appliance Scheduling (Diversity)")
+    axes[2].set_title("Aggregate Appliance Scheduling")
     axes[2].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     axes[2].grid(True, axis='y', alpha=0.3)
 

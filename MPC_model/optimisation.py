@@ -3,148 +3,174 @@ import pulp
 from config import *
 from data import *
 
-def solve_scenario(mode="minimise_cost", co2_limit=None):
-    # E: binary variable E_jit indicates "task i from home j that is done at time t" 
-    E = pulp.LpVariable.dicts("Appliance_Start", ((h, app["name"], t) for h in homes for app in appliances for t in time_steps), cat='Binary')
+def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already_run, history_E, horizon=48, mode="minimise_cost"):
+    # Createa  a local timeline from 0 to H for the solver
+    mpc_steps = range(horizon)
 
-    # I_t: Electricity import from the grid
-    I = pulp.LpVariable.dicts("Grid_Import", time_steps, lowBound=0, cat='Continuous')
+    local_demand = [electric_demand_per_house[(start_step + k) % total_steps] for k in mpc_steps]
+    local_heat_demand = [heat_demand_per_house[(start_step + k) % total_steps] for k in mpc_steps]
+    local_prices = [price_grid_elec[(start_step + k) % total_steps] for k in mpc_steps]
+
+    model = pulp.LpProblem(f"MPC_Optimization_Step_{start_step}", pulp.LpMinimize)
+
+    S_E = pulp.LpVariable.dicts("SoC", mpc_steps, 0, C_E)
+
+    I = pulp.LpVariable.dicts("Grid_Import", mpc_steps, 0)
+
+    # E: binary variable E_jit indicates "task i from home j that is done at time t" 
+    E = pulp.LpVariable.dicts("Appliance_Start", ((h, app["name"], t) for h in homes for app in appliances for t in mpc_steps), cat='Binary')
 
     # f_t: Thermal Storage discharge
-    f = pulp.LpVariable.dicts("Thermal_Discharge", time_steps, lowBound=0, cat='Continuous')
+    f = pulp.LpVariable.dicts("Thermal_Discharge", mpc_steps, lowBound=0, cat='Continuous')
 
     # g_T t: Thermal Storage charge
-    g_T = pulp.LpVariable.dicts("Thermal_Charge", time_steps, lowBound=0, cat='Continuous')
+    g_T = pulp.LpVariable.dicts("Thermal_Charge", mpc_steps, lowBound=0, cat='Continuous')
 
     # Create variables for charge and discharge rates of the electrical storage
-    z = pulp.LpVariable.dicts("Charge_Rate", time_steps, lowBound=0, cat='Continuous')
-    y = pulp.LpVariable.dicts("Discharge_Rate", time_steps, lowBound=0, cat='Continuous')
-
-    model = pulp.LpProblem("HEMS_Optimization", pulp.LpMinimize)
+    z = pulp.LpVariable.dicts("Charge_Rate", mpc_steps, lowBound=0, cat='Continuous')
+    y = pulp.LpVariable.dicts("Discharge_Rate", mpc_steps, lowBound=0, cat='Continuous')
 
     # Power output of CHP
-    u = pulp.LpVariable.dicts("u_CHP", time_steps, lowBound=0, upBound=C_CHP, cat='Continuous')
+    u = pulp.LpVariable.dicts("u_CHP", mpc_steps, lowBound=0, upBound=C_CHP, cat='Continuous')
 
     # Power output of Boiler
-    x_t = pulp.LpVariable.dicts("x_Boiler", time_steps, lowBound=0, upBound=C_B, cat='Continuous')
-
-    # State of Charge for Electrical Storage
-    S_E = pulp.LpVariable.dicts("S_Elec_stored", time_steps, lowBound=0, upBound=C_E, cat='Continuous')
+    x_t = pulp.LpVariable.dicts("x_Boiler", mpc_steps, lowBound=0, upBound=C_B, cat='Continuous')
 
     # State of Charge for Thermal Storage
-    S_TH = pulp.LpVariable.dicts("S_Thermal_stored", time_steps, lowBound=0, upBound=C_TH, cat='Continuous')
+    S_TH = pulp.LpVariable.dicts("S_Thermal_stored", mpc_steps, lowBound=0, upBound=C_TH, cat='Continuous')
 
+    model += S_E[0] == intital_soc_E
+    model += S_TH[0] == initial_soc_TH
 
-    # Appliance scheduling constraints (per home)
+    for k in mpc_steps:
+        # Equations 1, 2, 7, 8
+
+        model += u[k] <= C_CHP, f"CHP_Capacity{k}"
+        model += x_t[k] <= C_B, f"Boiler_Capacity{k}"
+        model += y[k] <= D_E, f"Discharge_Rate_Limit{k}"
+        model += z[k] <= G_E, f"Charge_Limit{k}"
+
+        # Storage Dynamics (Eq 5)
+        if k > 0:
+            model += S_E[k] == S_E[k-1] + (nu_E * delta * z[k]) - (delta * y[k] / nu_E)
+            model += S_TH[k] == S_TH[k-1] + (delta * g_T[k]) - (delta * f[k] / nu_TH)
+
     for h in homes:
         for app in appliances:
             name = app["name"]
-            start_step = int(app["T_S"]* steps_per_hour)
-            end_step = int(app["T_F"]* steps_per_hour - app["Slots"])
+            
+            if appliances_already_run[h][name] == True:
+                # If it already ran today, force it off for this entire prediction horizon
+                for k in mpc_steps:
+                    model += E[h, name, k] == 0, f"Already_Run_Home_{h}_{name}_k{k}"
+            else:
+                # If it hasn't run yet, do the normal scheduling
+                duration_steps = int(app["Slots"])
+                abs_start_limit = int(app["T_S"] * steps_per_hour)
+                abs_end_limit = int(app["T_F"] * steps_per_hour - duration_steps) % total_steps
+                
+                valid_k_starts = []
 
-            # +1 because range is exclusive at the end
-            valid_start_steps = range(start_step, end_step + 1)
+                for k in mpc_steps:
+                    # Map local step k to absolute step
+                    abs_t = (start_step + k) % total_steps
 
-            # Each home must start each task exactly once
-            model += pulp.lpSum(E[h, name, t] for t in valid_start_steps) == 1, f"Appliance_{name}_Scheduling_Home_{h}"
-
-            # Force start to 0 outside the valid window
-            for t in time_steps:
-                if t < start_step or t > end_step:
-                    model += E[h, name, t] == 0, f"Appliance_{name}_Invalid_Start_{t}_Home_{h}"
-
-
-    # Calculate Flexible Load (sum of all homes)
-    flexible_load = {}
-    for t in time_steps:
-        load_at_t = 0
+                    # Check if the appliance window crosses midnight
+                    if abs_start_limit <= abs_end_limit:
+                        is_valid = (abs_start_limit <= abs_t <= abs_end_limit)
+                    else:
+                        is_valid = (abs_t >= abs_start_limit or abs_t <= abs_end_limit)
+                    
+                    if is_valid:
+                        valid_k_starts.append(k)
+                    else:
+                        model += E[h, name, k] == 0, f"Invalid_Start_Home_{h}_App_{name}_Step_{k}"
+                
+                if len(valid_k_starts) > 0:
+                    model += pulp.lpSum(E[h, name, k] for k in valid_k_starts) == 1, f"Scheduling_Home_{h}_App_{name}"
+         
+            
+    flexible_load = {}   
+    locked_in_power = {}        
+    for k in mpc_steps:
+        load_at_k = 0
+        locked_power = 0
         for h in homes:
             for app in appliances:
                 name = app["name"]
-                duration_steps = int(app["Slots"])
                 power = app["Power"]
-                possible_start_steps = [ts for ts in range(t- duration_steps + 1, t + 1) if ts >= 0]    # ts = t_start
-                load_at_t += pulp.lpSum(E[(h, name, ts)] for ts in possible_start_steps) * power
-        flexible_load[t] = load_at_t
+                duration_steps = int(app["Slots"])
+                
+                # Future/ present loads scheduled here
+                possible_local_starts = [ks for ks in range(k - duration_steps + 1, k + 1) if ks >= 0]
+                load_at_k += pulp.lpSum(E[(h, name, ks)] for ks in possible_local_starts) * power    
 
-    # Hourly constraints
-    for t in time_steps:
-        total_elec_demand = electric_demand_per_house[t] * num_homes
-        total_heat_demand = heat_demand_per_house[t] * num_homes
+                # Past loads still running
+                for past_k in range(-duration_steps + 1, 0):
+                    if (k - past_k) < duration_steps:
+                        past_t = (start_step + past_k) % total_steps
+                        if history_E.get((h, name, past_t), 0) == 1:
+                            locked_power += power
 
-        model += total_elec_demand + flexible_load[t] == u[t] + y[t] - z[t] + I[t], f"Meet_Electric_Demand_{t}"
-        # Eq 14
-        model += total_heat_demand == (alpha * u[t]) + x_t[t] + f[t] - g_T[t], f"Meet_Heat_Demand_{t}"
-
-        # Eq 1: CHP capacity constraint
-        model += u[t] <= C_CHP, f"CHP_Capacity_Constraint_{t}"
-
-        # Eq 2: Boiler capacity constraint
-        model += x_t[t] <= C_B, f"Boiler_Capacity_Constraint_{t}"
-
-        # Eq 3: Electrical storage capacity constraint
-        model += S_E[t] <= C_E, f"Electrical_Storage_Capacity_Constraint_{t}"
-
-        # Eq 4: Thermal storage capacity constraint
-        model += S_TH[t] <= C_TH, f"Thermal_Storage_Capacity_Constraint_{t}"
-
-        # Eq 7: Discharge rate limit    
-        model += y[t] <= D_E, f"Discharge_Rate_Limit_{t}"
-
-        # Eq 8: Charge rate limit
-        model += z[t] <= G_E, f"Charge_Rate_Limit_{t}"
-
-        if t == 0:
-            S_prev_E = S_init
-            S_prev_TH = 0  # Assuming Thermal Storage starts empty
-        else :
-            # Eq 5
-            S_prev_E = S_E[t-1]
-            S_prev_TH = S_TH[t-1]
+        flexible_load[k] = load_at_k
+        locked_in_power[k] = locked_power # Save the locked-in power for step k
 
 
-        model += S_E[t] == S_prev_E + (nu_E * delta * z[t]) - (delta* y[t] / nu_E), f"Battery_Balance{t}"
-        model += S_TH[t] == S_prev_TH + (delta * g_T[t]) - (delta * f[t] / nu_TH), f"Therm_Balance_Logic_{t}"
-        
-    last_hour = 47
+    for k in mpc_steps:
+        # Base Demands
+        total_elec_demand = local_demand[k] * num_homes
+        total_heat_demand = local_heat_demand[k] * num_homes
 
-    # Eq 6: Boundary condition for no daily electricity accumulation
-    model += S_E[last_hour] == S_init, "End_of_Day_Balance"
+        model += total_elec_demand + flexible_load[k] + locked_in_power[k] == u[k] + y[k] - z[k] + I[k], f"Electric_Demand_Balance_{k}"
+        model += total_heat_demand == (alpha * u[k]) + x_t[k] + f[k] - g_T[k], f"Heat_Demand_Balance_{k}"
 
-    # Objective Functions (Eq 18a and 19)
-    # Cost Objective
+    model += S_E[horizon-1] >= intital_soc_E, "End_SoC_E"
+
     total_cost = pulp.lpSum([
-        delta * (I[t] * price_grid_elec[t] +
-                (u[t] + x_t[t] / 0.85) * price_gas) +
-                y[t] * wear_cost_elec +
-                f[t] * wear_cost_therm
-        for t in time_steps    
-        ])
-
-    # CO2 Objective
-    total_co2 = pulp.lpSum([
-        delta * (
-            u[t] * xi_CHP +         # CHP emissions
-            I[t] * CO2_grid[t] +    # Grid emissions
-            x_t[t] * xi_Boiler      # Boiler emissions
-        ) for t in time_steps
+        delta * (I[k] * local_prices[k] + 
+                 (u[k] + x_t[k] / 0.85) * price_gas) +
+                 y[k] * wear_cost_elec +
+                 f[k] * wear_cost_therm
+        for k in mpc_steps
     ])
 
-    # Apply Epsilon Constraint (Eq 21) with +0.001 to avoid numerical issues
-    if co2_limit is not None:
-        model += total_co2 <= co2_limit + 0.001, "CO2_Emissions_Limit"
+    model += total_cost
 
-    # Set Objective
-    if mode == "minimise_cost":
-        model += total_cost
-    else:
-        model += total_co2
-
-    # Solve
     model.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=30, gapRel=0.05))
-    solve_time = model.solutionTime
 
     if pulp.LpStatus[model.status] == 'Optimal':
-        return pulp.value(total_cost), pulp.value(total_co2), u, S_E, E, I, solve_time
+        # At k = 0
+        current_u = u[0].varValue
+        current_z = z[0].varValue
+        current_y = y[0].varValue
+        current_I = I[0].varValue
+        current_f = f[0].varValue
+        current_g_T = g_T[0].varValue
+        current_x_t = x_t[0].varValue
+
+        current_E_starts = []
+        for h in homes:
+            for app in appliances:
+                name = app["name"]
+                if E[h, name, 0].varValue > 0.9:
+                    current_E_starts.append((h, name))
+        return {
+            'status': 'Optimal',
+            'cost': pulp.value(total_cost),
+            'u': current_u,
+            'charge' : current_z,
+            'z': current_z,
+            'discharge' : current_y,
+            'y': current_y,
+            'import' : current_I,
+            'f': current_f,
+            'g_T': current_g_T,
+            'x_t': current_x_t,
+            'app_starts': current_E_starts,
+            'current_soc_E': S_E[0].varValue,
+            'current_soc_TH': S_TH[0].varValue
+            }
+
     else:
-        return None, None, None, None, None, None, solve_time
+        return {'status': 'Infeasible'}
+    

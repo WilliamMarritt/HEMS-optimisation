@@ -1,90 +1,84 @@
+
+#%%
 # main.py
 from config import *
 from data import *
-from optimisation import solve_scenario
+from optimisation import solve_mpc_step
 from visualisation import plot_results
 
-total_time_run = 0
 
 # --- Minimise Cost ---
-print("Running Cost Minimisation...")
-min_cost, co2_at_min_cost, _, _, _, _, t_run = solve_scenario(mode="minimise_cost")
-total_time_run += t_run
+print("Running MPC Simulation for 24 hours...")
+current_soc_E = 0
+current_soc_TH = 0
 
-if min_cost is not None:
-    print(f"Cheapest Cost: £{min_cost:.2f}, CO2 Emissions: {co2_at_min_cost:.2f} kg")
-else:
-    print("No feasible solution found for cost minimisation.")
+appliances_already_run = {
+    h: {app["name"]: False for app in appliances} for h in homes
+}
 
-# --- Minimise CO2 ---
-print("Running CO2 Minimisation...")
-cost_at_min_co2, min_co2, _, _, _, _, t_run = solve_scenario(mode="minimise_co2")
-total_time_run += t_run
+history_u = []
+history_I = []
+history_soc_E = []
+history_E = {}
+total_time_run = 0
+total_daily_cost = 0
 
-if cost_at_min_co2 is not None:
-    print(f"Lowest CO2: {min_co2:.2f} kg, Cost: £{cost_at_min_co2:.2f}")
-else:
-    print("No feasible solution found for CO2 minimisation.")
+# Run for 2 days (96 steps)
+for t in range(total_steps* 2):
+    local_t = t % total_steps
+    day = t // total_steps      # Day 1 or Day 2
 
-# Pareto Curve
-steps = 5
-phi2_max = co2_at_min_cost
-phi2_min = min_co2
+    hour = int(t * delta)
+    minute = int((t * delta * 60) % 60)
 
-print(f"\n{'Limit (kg)':<12} | {'Cost (£)':<10} | {'Actual CO2 (kg)':<15}")
-print("-" * 45)
+    print(f"Solving MPC for time step {t} (Hour {hour:02d}:{minute:02d})...")
 
-for k in range(steps + 1):
-    # Calculate epsilon (the limit)
-    epsilon = phi2_max - ((phi2_max - phi2_min) * k / steps)
+    result = solve_mpc_step(
+        start_step=t,
+        intital_soc_E=current_soc_E,
+        initial_soc_TH=current_soc_TH,
+        appliances_already_run=appliances_already_run,
+        history_E=history_E,
+        horizon=48,
+        mode = "minimise_cost"
+    )
 
-    # Solve minimising cost with CO2 limit
-    cost, actual_co2, _, _, _, _, t_run = solve_scenario(mode="minimise_cost", co2_limit=epsilon)
-    total_time_run += t_run
+    if result['status'] != 'Optimal':
+        print(f"Warning: Solver Failed at step {t} with status")
+        break
 
-    if cost is not None:
-        print(f"{epsilon:<12.2f} | {cost:<10.2f} | {actual_co2:<15.2f}")
-    else:
-        print(f"{epsilon:<12.2f} | {'Infeasible':<10} | {'N/A':<15}")
+    total_time_run += result.get('solve_time', 0)
 
+    history_u.append(result['u'])
+    history_I.append(result['import'])
+    history_soc_E.append(current_soc_E)
 
-# --- Final Plot (Middle Limit) ---
-middle_limit = (co2_at_min_cost + min_co2) / 2
-print("\nSolving Final Schedule (Middle Limit)...")
-cost, co2, u_final, S_E_final, E_final, I_final, t_run = solve_scenario(mode="minimise_cost", co2_limit=middle_limit)
-total_time_run += t_run
+    total_daily_cost += (result["import"] * price_grid_elec[local_t] * delta) + \
+                    ((result["u"] + (result["x_t"] / 0.85)) * price_gas * delta) + \
+                    (result["f"] * wear_cost_therm * delta) + \
+                    (result["y"] * wear_cost_elec * delta)
 
-print("\n--- FINAL SCHEDULE (Middle Limit) ---")
-print(f"Cost: £{cost:.2f}, CO2: {co2:.2f} kg")
-print("Status: Optimal")
+    for h, name in result['app_starts']:
+        appliances_already_run[h][name] = True
+        # Use absolute t so the graph plots across 48 h
+        history_E[(h, name, t)] = 1
+        print(f"  - Scheduled {name} for Home {h} at time step {t}")
 
-# Print Start Times
-h = 0
-for t in time_steps:
-        # Convert step to actual time 
-        hour = int(t * delta)
-        minute = int((t * delta * 60) % 60)
-        time_str = f"{hour:02d}:{minute:02d}"
-        
-        active_apps = []
-        for app in appliances:
-            name = app["name"]
-            # Check if this appliance is starting 
-            if E_final[h, name, t].varValue > 0.9:
-                active_apps.append(f"START {name}")
-            
-            # Check if it is currently RUNNING (based on previous starts)
-            duration_steps = int(app["Slots"])
-            for look_back in range(1, duration_steps):
-                prev_t = t - look_back
-                if prev_t >= 0 and E_final[h, name, prev_t].varValue > 0.9:
-                    active_apps.append(f"Running ({name})")
+    current_soc_E = current_soc_E + (nu_E * delta * result['z']) - (delta * result['y'] / nu_E)
+    current_soc_E = max(0, min(C_E, current_soc_E))  # Ensure SoC stays within bounds
 
-        if active_apps:
-            print(f"{time_str} : {', '.join(active_apps)}")
+    current_soc_TH = current_soc_TH + (delta * result['g_T']) - (delta * result['f'] / nu_TH)
+    current_soc_TH = max(0, min(C_TH, current_soc_TH))  #
 
-if u_final is not None:
-    print("Generating plots...")
-    plot_results(u_final, S_E_final, E_final, I_final, price_grid_elec)
+daily_average_cost = total_daily_cost / 2
 
-print(f"Total time taken for all optimisations: {total_time_run:.2f} seconds")
+print("\n --- Simulation Complete ---")
+print("Total cost for the day: £{:.2f}".format(total_daily_cost))
+print("Total Computation Time: {:.2f} seconds".format(total_time_run))
+
+print("Generating Plots...")
+
+#%%
+plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec)
+
+# %%
