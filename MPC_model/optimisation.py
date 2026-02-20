@@ -70,6 +70,8 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
                 abs_end_limit = int(app["T_F"] * steps_per_hour - duration_steps) % total_steps
                 
                 valid_k_starts = []
+                found_window = False
+                window_closed = False
 
                 for k in mpc_steps:
                     # Map local step k to absolute step
@@ -81,9 +83,13 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
                     else:
                         is_valid = (abs_t >= abs_start_limit or abs_t <= abs_end_limit)
                     
-                    if is_valid:
+                    if is_valid and not window_closed:
                         valid_k_starts.append(k)
+                        found_window = True
                     else:
+                        if found_window:
+                            window_closed = True        
+                    
                         model += E[h, name, k] == 0, f"Invalid_Start_Home_{h}_App_{name}_Step_{k}"
                 
                 if len(valid_k_starts) > 0:
@@ -108,7 +114,7 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
                 # Past loads still running
                 for past_k in range(-duration_steps + 1, 0):
                     if (k - past_k) < duration_steps:
-                        past_t = (start_step + past_k) % total_steps
+                        past_t = (start_step + past_k)
                         if history_E.get((h, name, past_t), 0) == 1:
                             locked_power += power
 

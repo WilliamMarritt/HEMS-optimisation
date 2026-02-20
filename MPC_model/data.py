@@ -42,7 +42,7 @@ appliances = [
     {'name': 'Desktop', 'T_S': 18, 'T_F': 24, 'P': 3, 'Power': 0.3},
     {'name': 'Vacuum cleaner', 'T_S': 9, 'T_F': 17, 'P': 0.5, 'Power': 1.2},
     {'name': 'Fridge', 'T_S': 0, 'T_F': 24, 'P': 24, 'Power': 0.3},
-    {'name': 'Electric car', 'T_S': 10, 'T_F': 23, 'P': 3, 'Power': 3.5}
+    {'name': 'Electric car', 'T_S': 18, 'T_F': 8, 'P': 3, 'Power': 3.5}
 ]
 
 # Calculate Slots (duration in steps) and extract names

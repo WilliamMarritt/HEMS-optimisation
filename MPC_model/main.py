@@ -28,6 +28,11 @@ for t in range(total_steps* 2):
     local_t = t % total_steps
     day = t // total_steps      # Day 1 or Day 2
 
+    if local_t == 0 and day == 1:
+        for h in homes:
+            for app in appliances:
+                appliances_already_run[h][app["name"]] = False
+
     hour = int(t * delta)
     minute = int((t * delta * 60) % 60)
 
@@ -79,6 +84,10 @@ print("Total Computation Time: {:.2f} seconds".format(total_time_run))
 print("Generating Plots...")
 
 #%%
+
+
+from visualisation import plot_results
+
 plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec)
 
 # %%

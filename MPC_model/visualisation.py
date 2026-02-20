@@ -16,8 +16,9 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
     grid_import = history_I
 
     total_demand = []
-    for t in time_steps:
-        d_t = electric_demand_per_house[t] * num_homes
+    for t in time_steps_96:
+        local_t = t % total_steps
+        d_t = electric_demand_per_house[local_t] * num_homes
         for h in homes:
             for app in appliances:
                 name = app["name"]
@@ -48,7 +49,8 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
     ax2.set_ylim(0, C_E)
 
     ax2_price = ax2.twinx()
-    line2 = ax2_price.plot(hours, price_grid_elec, 'r--', label='Grid Price (£/kWh)', linewidth=2)
+    price_grid_elec_96 =  price_grid_elec + price_grid_elec
+    line2 = ax2_price.plot(hours, price_grid_elec_96, 'r--', label='Grid Price (£/kWh)', linewidth=2)
     ax2_price.set_ylabel('Grid Price (£/kWh)', color='r')
     ax2_price.tick_params(axis='y', labelcolor='r')
 
@@ -60,11 +62,11 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
 
     # --- Plot 3: Appliance Schedule ---
     appliance_data = {
-            name: {'counts': [0] * total_steps, 'power': [0] * total_steps} 
+            name: {'counts': [0] * (total_steps*2), 'power': [0] * (total_steps*2)} 
             for name in app_names
         }
     
-    for t in time_steps:
+    for t in time_steps_96:
         for app in appliances:
             name = app["name"]
             power = app["Power"]
@@ -85,7 +87,7 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
 
     # Plot as a stacked bar chart 
     colors = cm.tab20.colors  # List of 20 colors
-    bottom = np.zeros(total_steps)
+    bottom = np.zeros(total_steps*2)
     
     for i, (name, data) in enumerate(sorted_appliances):
         power_series = data['power']
@@ -101,7 +103,7 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
     axes[2].set_ylabel("Power used by Appliances (kW)")
     axes[2].set_ylim(0, ylim_top)  # Add some headroom above the peak
     axes[2].set_xlabel("Hour of Day")
-    axes[2].set_xticks(range(0, 25, 1))
+    axes[2].set_xticks(range(0, 49, 2))
     axes[2].set_title("Aggregate Appliance Scheduling")
     axes[2].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     axes[2].grid(True, axis='y', alpha=0.3)

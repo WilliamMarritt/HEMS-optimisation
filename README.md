@@ -18,4 +18,4 @@ This project implements a Mixed Integer Linear Programming (MILP) model for opti
 
 This project is based on the mathematical model and system parameters presented in:
 
-> **Zhang, D., Evangelisti, S., Lettieri, P., & Papageorgiou, L. G. (2016).** > *Economic and environmental scheduling of smart homes with microgrid: DER operation and electrical tasks.* > Energy Conversion and Management, 110, 113-124. [doi.org/10.1016/j.enconman.2015.11.050](https://doi.org/10.1016/j.enconman.2015.11.050)
+> **Zhang, D., Evangelisti, S., Lettieri, P., & Papageorgiou, L. G. (2016).** > *Economic and environmental scheduling of smart homes with microgrid: DER operation and electrical tasks.* > Energy Conversion and Management, 110, 113-124.
