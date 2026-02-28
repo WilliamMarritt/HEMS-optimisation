@@ -1,0 +1,37 @@
+import json
+from config import I_max
+from data import price_grid_elec, appliances
+from visualisation import plot_simulation_results
+
+def recover_graphs():
+    print("Loading rescued data from JSON...")
+    
+    # 1. Open the safety net file
+    try:
+        with open("simulation_results.json", "r") as f:
+            saved_data = json.load(f)
+    except FileNotFoundError:
+        print("Error: Could not find simulation_results.json")
+        return
+
+    # Extract the arrays
+    history_community_demand = saved_data["community_demand"]
+    history_house_0_soc = saved_data["house_0_soc"]
+    simulation_steps = len(history_community_demand)
+
+    # 2. Create a blank appliance data to prevent the 3-pane visualizer from crashing
+    # (The bottom graph will be blank, but the top two will plot perfectly!)
+    dummy_data = {app["name"]: [0.0] * simulation_steps for app in appliances}
+
+    # 3. Plot the data!
+    print("Generating visuals...")
+    plot_simulation_results(
+        community_demand=history_community_demand,
+        transformer_limit=I_max,
+        house_0_soc=history_house_0_soc,
+        grid_prices=price_grid_elec,
+        appliance_data=dummy_data
+    )
+
+if __name__ == "__main__":
+    recover_graphs()
