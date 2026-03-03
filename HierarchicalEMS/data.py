@@ -38,17 +38,17 @@ solar_profile = [
 # Appliance Definitions
 # T_S: Earliest start, T_F: Latest finish, P: Duration (hours)
 appliances = [
-    {'name': 'Dish washer', 'T_S': 9, 'T_F': 17, 'P': 2, 'Power': 1.0},
-    {'name': 'Washing machine', 'T_S': 9, 'T_F': 12, 'P': 1.5, 'Power': 1.2},
-    {'name': 'Spin dryer', 'T_S': 13, 'T_F': 18, 'P': 1, 'Power': 2.5},
-    {'name': 'Cooker hob', 'T_S': 8, 'T_F': 9, 'P': 0.5, 'Power': 3},
-    {'name': 'Cooker oven', 'T_S': 18, 'T_F': 19, 'P': 0.5, 'Power': 5},
-    {'name': 'Microwave', 'T_S': 8, 'T_F': 9, 'P': 0.5, 'Power': 1.7},
-    {'name': 'Interior lighting', 'T_S': 18, 'T_F': 24, 'P': 6, 'Power': 0.84},
-    {'name': 'Laptop', 'T_S': 18, 'T_F': 24, 'P': 2, 'Power': 0.1},
-    {'name': 'Desktop', 'T_S': 18, 'T_F': 24, 'P': 3, 'Power': 0.3},
-    {'name': 'Vacuum cleaner', 'T_S': 9, 'T_F': 17, 'P': 0.5, 'Power': 1.2},
-    {'name': 'Electric car', 'T_S': 18, 'T_F': 8, 'P': 3, 'Power': 3.5}
+    {'name': 'Dish washer',       'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'P': 2,   'Slots': 4,  'Power': 1.0},
+    {'name': 'Washing machine',   'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 12, 'P': 1.5, 'Slots': 3,  'Power': 1.2},
+    {'name': 'Spin dryer',        'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 13, 'T_F': 18, 'P': 1,   'Slots': 2,  'Power': 2.5},
+    {'name': 'Vacuum cleaner',    'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'P': 0.5, 'Slots': 1,  'Power': 1.2},
+    {'name': 'Cooker hob',        'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 8,  'T_F': 9,  'P': 0.5, 'Slots': 1,  'Power': 3.0},
+    {'name': 'Cooker oven',       'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 19, 'P': 0.5, 'Slots': 1,  'Power': 5.0},
+    {'name': 'Microwave',         'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 8,  'T_F': 9,  'P': 0.5, 'Slots': 1,  'Power': 1.7},
+    {'name': 'Interior lighting', 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 6,   'Slots': 12, 'Power': 0.84},
+    {'name': 'Laptop',            'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 2,   'Slots': 4,  'Power': 0.1},
+    {'name': 'Desktop',           'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 3,   'Slots': 6,  'Power': 0.3},
+    {'name': 'Electric car',      'deferrable': True,  'interruptible': True,  'power_type': "flexible", 'T_S': 18, 'T_F': 8, 'P': 3,    'Slots': 6, 'Min_Power': 1.4, 'Max_Power': 7.0, 'Required_Energy': 10.5}
 ]
 
 # Calculate Slots (duration in steps) and extract names

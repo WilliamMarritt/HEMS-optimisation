@@ -7,6 +7,7 @@ from community_controller import CommunityController
 from visualisation import plot_simulation_results
 from data import *
 import json
+import random
 
 def run_simulation():
     print("Initialising Microgrid Community")
@@ -16,6 +17,7 @@ def run_simulation():
     history_community_demand = []
     history_h0_soc = []
     history_h0_fridge_temp = []
+    history_h0_freezer_temp = []
     history_actual_community_demand = []
 
     h0_import = []
@@ -23,6 +25,8 @@ def run_simulation():
     h0_charge = []
     h0_solar = []
 
+    # locks the random shifting to a specific repeatable timeline
+    random.seed(42)
 
     simulation_steps = 96
 
@@ -66,13 +70,17 @@ def run_simulation():
 
         history_h0_soc.append(houses[0].current_soc)
         history_h0_fridge_temp.append(houses[0].current_T_fridge)
+        history_h0_freezer_temp.append(houses[0].current_T_freezer)
         
 
         h0_solar.append(PV_capacity * solar_profile[step % total_steps])
         h0_sched = next((item for item in approved_schedules if item["house_id"] == 0))
         h0_import.append(h0_sched["planned_import_k0"])
         h0_discharge.append(h0_sched["planned_discharge_k0"])
-        h0_charge.append(h0_sched["planned_charge_k0"])
+        h0_charge.append(h0_sched["planned_charge_k0"]
+        
+        
+        )
         
 
         
@@ -107,35 +115,64 @@ def run_simulation():
     
     # Keep tracking the fridge now removed from appliances dictionary in data.py
     appliance_data["Fridge"] = {'counts': [0] * simulation_steps, 'power': [0.0] * simulation_steps}
+    appliance_data["Freezer"] = {'counts': [0] * simulation_steps, 'power': [0.0] * simulation_steps}
 
+
+
+   
     for t in range(simulation_steps):
         for app in appliances:
             name = app["name"]
-            power = app["Power"]
-            duration = int(app["Slots"])
-            count = 0
+            power_type = app.get("power_type", "constant")       
 
-            fridge_power = 0.0
-            
-            # appliance_data["Fridge"]['counts'][t] = 1 if fridge_power > 0 else 0
-            # appliance_data["Fridge"]['power'][t] = fridge_power
+            rogue_power_total = 0.0
+            for house in [houses[0]]:
+                rogue_power_total += house.history_E.get(("Rogue_Load", t), 0.0)
 
-            for house in [houses[0]]: 
-                for look_back in range(duration):
-                    past_t = t - look_back
-                    if past_t >= 0 and house.history_E.get((name, past_t), 0) == 1:
-                        count += 1 
-                        break 
+            # Ensure the dictionary key exists before assigning
+            if "Unpredicted_Human_Load" not in appliance_data:
+                appliance_data["Unpredicted_Human_Load"] = {'counts': [0] * simulation_steps, 'power': [0.0] * simulation_steps}
+                
+            appliance_data["Unpredicted_Human_Load"]['counts'][t] = 1 if rogue_power_total > 0 else 0
+            appliance_data["Unpredicted_Human_Load"]['power'][t] = rogue_power_total
+
+            if power_type == "constant":
+                power = app["Power"]
+                duration = int(app["Slots"])
+                count = 0
+                for house in [houses[0]]:
+                    for look_back in range(duration):
+                        past_t = t - look_back
+                        if past_t >= 0 and house.history_E.get((name, past_t), 0) == 1:
+                            count += 1
+                            break
+
+                appliance_data[name]['counts'][t] = count
+                appliance_data[name]['power'][t] = count * power
+
+            elif power_type == "flexible":
+                exact_power = 0.0
+                for house in [houses[0]]:
+                    exact_power += house.history_E.get((name, t), 0.0)
+                
+                appliance_data[name]['counts'][t] = 1 if exact_power > 0 else 0
+                appliance_data[name]['power'][t] = exact_power
+
             
-            appliance_data[name]['counts'][t] = count
-            appliance_data[name]['power'][t]  = count * power
+          
 
         fridge_power = 0.0
+        freezer_power = 0.0
+        #
         for house in [houses[0]]:
             fridge_power += house.history_E.get(("Fridge", t), 0.0)
+            freezer_power += house.history_E.get(("Freezer", t), 0.0)
                 
         appliance_data["Fridge"]['counts'][t] = 1 if fridge_power > 0 else 0
         appliance_data["Fridge"]['power'][t] = fridge_power
+
+        appliance_data["Freezer"]['counts'][t] = 1 if freezer_power > 0 else 0
+        appliance_data["Freezer"]['power'][t] = freezer_power
     
         # fridge_count = 0
         # for house in [houses[0]]:
@@ -148,6 +185,12 @@ def run_simulation():
     # Sort appliances for better visualisation (most used at the bottom)
     sorted_appliances = sorted(appliance_data.items(), key=lambda item: sum(item[1]['counts']), reverse=True) 
     
+    h0_heat_pump = []
+    for t in range(simulation_steps):
+        hp_power = houses[0].history_E.get(("Heat_Pump", t), 0.0)
+        h0_heat_pump.append(hp_power)
+
+
     print("\nAppliance Sort Order (by total time steps):")
     for name, data in sorted_appliances:
         print(f"  {name}: {sum(data['counts'])} steps")
@@ -165,7 +208,9 @@ def run_simulation():
         h0_solar=h0_solar,
         h0_charge=h0_charge,
         h0_fridge_temp=history_h0_fridge_temp,
-        community_actual_demand=history_actual_community_demand
+        h0_freezer_temp=history_h0_freezer_temp,
+        community_actual_demand=history_actual_community_demand,
+        h0_heat_pump=h0_heat_pump
     )
 
 if __name__ == "__main__":

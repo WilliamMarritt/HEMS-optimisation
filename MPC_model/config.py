@@ -2,6 +2,8 @@
 
 # config.py
 
+I_max = 60
+
 # Simulation Time Settings
 delta = 0.5
 steps_per_hour = int(1 / delta)

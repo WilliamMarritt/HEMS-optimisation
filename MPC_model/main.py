@@ -20,6 +20,7 @@ history_u = []
 history_I = []
 history_soc_E = []
 history_E = {}
+history_y = []
 total_time_run = 0
 total_daily_cost = 0
 
@@ -40,7 +41,7 @@ for t in range(total_steps* 2):
 
     result = solve_mpc_step(
         start_step=t,
-        intital_soc_E=current_soc_E,
+        initial_soc_E=current_soc_E,
         initial_soc_TH=current_soc_TH,
         appliances_already_run=appliances_already_run,
         history_E=history_E,
@@ -55,10 +56,14 @@ for t in range(total_steps* 2):
     total_time_run += result.get('solve_time', 0)
 
     history_u.append(result['u'])
+    history_y.append(result['y'])
     history_I.append(result['import'])
     history_soc_E.append(current_soc_E)
 
-    total_daily_cost += (result["import"] * price_grid_elec[local_t] * delta) + \
+    standard_import_cost = result["import"] * price_grid_elec[local_t] * delta
+    penalty_cost = result["import_extra"] * 0.05 * delta
+
+    total_daily_cost += standard_import_cost + penalty_cost + \
                     ((result["u"] + (result["x_t"] / 0.85)) * price_gas * delta) + \
                     (result["f"] * wear_cost_therm * delta) + \
                     (result["y"] * wear_cost_elec * delta)
@@ -69,11 +74,14 @@ for t in range(total_steps* 2):
         history_E[(h, name, t)] = 1
         print(f"  - Scheduled {name} for Home {h} at time step {t}")
 
-    current_soc_E = current_soc_E + (nu_E * delta * result['z']) - (delta * result['y'] / nu_E)
-    current_soc_E = max(0, min(C_E, current_soc_E))  # Ensure SoC stays within bounds
+    # current_soc_E = current_soc_E + (nu_E * delta * result['z']) - (delta * result['y'] / nu_E)
+    # current_soc_E = max(0, min(C_E, current_soc_E))  # Ensure SoC stays within bounds
 
-    current_soc_TH = current_soc_TH + (delta * result['g_T']) - (delta * result['f'] / nu_TH)
-    current_soc_TH = max(0, min(C_TH, current_soc_TH))  #
+    # current_soc_TH = current_soc_TH + (delta * result['g_T']) - (delta * result['f'] / nu_TH)
+    # current_soc_TH = max(0, min(C_TH, current_soc_TH))  #
+
+    current_soc_E = result['current_soc_E']
+    current_soc_TH = result['current_soc_TH']
 
 daily_average_cost = total_daily_cost / 2
 
@@ -88,6 +96,6 @@ print("Generating Plots...")
 
 from visualisation import plot_results
 
-plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec)
+plot_results(history_u, history_I, history_soc_E, history_E,history_y, price_grid_elec)
 
 # %%

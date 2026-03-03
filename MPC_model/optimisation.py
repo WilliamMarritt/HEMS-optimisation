@@ -3,7 +3,7 @@ import pulp
 from config import *
 from data import *
 
-def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already_run, history_E, horizon=48, mode="minimise_cost"):
+def solve_mpc_step(start_step, initial_soc_E, initial_soc_TH, appliances_already_run, history_E, horizon=48, mode="minimise_cost"):
     # Createa  a local timeline from 0 to H for the solver
     mpc_steps = range(horizon)
 
@@ -15,7 +15,9 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
 
     S_E = pulp.LpVariable.dicts("SoC", mpc_steps, 0, C_E)
 
-    I = pulp.LpVariable.dicts("Grid_Import", mpc_steps, 0)
+    I_base = pulp.LpVariable.dicts("Grid_Import_Base", mpc_steps, lowBound=0, upBound=I_max, cat='Continuous')
+    I_extra = pulp.LpVariable.dicts("Grid_Import_Extra", mpc_steps, lowBound=0, cat='Continuous')
+    I  = {k: I_base[k] + I_extra[k] for k in mpc_steps}
 
     # E: binary variable E_jit indicates "task i from home j that is done at time t" 
     E = pulp.LpVariable.dicts("Appliance_Start", ((h, app["name"], t) for h in homes for app in appliances for t in mpc_steps), cat='Binary')
@@ -39,8 +41,7 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
     # State of Charge for Thermal Storage
     S_TH = pulp.LpVariable.dicts("S_Thermal_stored", mpc_steps, lowBound=0, upBound=C_TH, cat='Continuous')
 
-    model += S_E[0] == intital_soc_E
-    model += S_TH[0] == initial_soc_TH
+    
 
     for k in mpc_steps:
         # Equations 1, 2, 7, 8
@@ -51,7 +52,12 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
         model += z[k] <= G_E, f"Charge_Limit{k}"
 
         # Storage Dynamics (Eq 5)
-        if k > 0:
+        if k == 0:
+            # First step uses the Initial SoC passed from main.py
+            model += S_E[0] == initial_soc_E + (nu_E * delta * z[0]) - (delta * y[0] / nu_E)
+            model += S_TH[0] == initial_soc_TH + (delta * g_T[0]) - (delta * f[0] / nu_TH)
+        else:
+            # Subsequent steps look backwards at k-1
             model += S_E[k] == S_E[k-1] + (nu_E * delta * z[k]) - (delta * y[k] / nu_E)
             model += S_TH[k] == S_TH[k-1] + (delta * g_T[k]) - (delta * f[k] / nu_TH)
 
@@ -130,10 +136,10 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
         model += total_elec_demand + flexible_load[k] + locked_in_power[k] == u[k] + y[k] - z[k] + I[k], f"Electric_Demand_Balance_{k}"
         model += total_heat_demand == (alpha * u[k]) + x_t[k] + f[k] - g_T[k], f"Heat_Demand_Balance_{k}"
 
-    model += S_E[horizon-1] >= intital_soc_E, "End_SoC_E"
 
     total_cost = pulp.lpSum([
-        delta * (I[k] * local_prices[k] + 
+        delta * ((I_base[k] + I_extra[k])  * local_prices[k] + 
+                 (I_extra[k] * 0.05) + 
                  (u[k] + x_t[k] / 0.85) * price_gas) +
                  y[k] * wear_cost_elec +
                  f[k] * wear_cost_therm
@@ -149,7 +155,9 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
         current_u = u[0].varValue
         current_z = z[0].varValue
         current_y = y[0].varValue
-        current_I = I[0].varValue
+        current_I_base = I_base[0].varValue
+        current_I_extra = I_extra[0].varValue
+        current_I_total = current_I_extra + current_I_base
         current_f = f[0].varValue
         current_g_T = g_T[0].varValue
         current_x_t = x_t[0].varValue
@@ -168,7 +176,9 @@ def solve_mpc_step(start_step, intital_soc_E, initial_soc_TH, appliances_already
             'z': current_z,
             'discharge' : current_y,
             'y': current_y,
-            'import' : current_I,
+            'import': current_I_total,
+            'import_base' : current_I_base,
+            'import_extra': current_I_extra,
             'f': current_f,
             'g_T': current_g_T,
             'x_t': current_x_t,

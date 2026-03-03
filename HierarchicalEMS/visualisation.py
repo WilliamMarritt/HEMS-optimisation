@@ -6,13 +6,13 @@ import numpy as np
 
 def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_prices, appliance_data,
                             h0_import=None, h0_discharge=None, h0_solar=None, h0_charge=None, 
-                            h0_fridge_temp=None, community_actual_demand=None, ) :
+                            h0_fridge_temp=None, h0_freezer_temp=None, community_actual_demand=None, h0_heat_pump=None ) :
     
     # create a time axis in hours
     steps = len(community_demand)
     time_axis_hours = np.arange(steps) / 2.0
 
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12,10), sharex=True)
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(14,10), sharex=True)
 
     # PLOT 1: plot community demand
     if community_actual_demand is not None:
@@ -38,8 +38,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     # Combine legends for Plot 1
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_2, labels_2 = ax1_price.get_legend_handles_labels()
-    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right')
-
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
     # PLOT 2: house 0 battery SoC
     # any solar generated that is not charging the battery is used to power house
     if h0_solar is not None and h0_charge is not None:
@@ -98,6 +97,18 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
 
     # ax4.set_xlabel("Time (Hours)", fontweight='bold')
 
+    if h0_heat_pump is not None:
+        # Plot a bold line with a filled area underneath for maximum visual impact
+        ax4.plot(time_axis_hours, h0_heat_pump, label="Heat Pump Power (kW)", color='firebrick', linewidth=2)
+        ax4.fill_between(time_axis_hours, 0, h0_heat_pump, color='firebrick', alpha=0.3)
+        
+        ax4.set_ylabel("Thermal Power (kW)", fontweight='bold')
+        ax4.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        ax4.grid(True, linestyle='--', alpha=0.5)
+        
+        # Move the X-axis label from ax3 to ax4 since it's now the bottom graph
+        ax3.set_xlabel("") 
+        ax4.set_xlabel("Time (Hours)", fontweight='bold')
 
 
     # Final layout adjustments and save
