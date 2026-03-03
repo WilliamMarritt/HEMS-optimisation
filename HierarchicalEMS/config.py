@@ -2,7 +2,7 @@
 
 # config.py
 
-I_max = 5
+I_max = 10
 
 # Simulation Time Settings
 delta = 0.5
@@ -13,8 +13,8 @@ time_steps = range(total_steps)  # 48 half-hourly time steps for a 24-hour perio
 # Physical System Constants (parameters taken from the paper)
 
 C_E = 10.0      # Electrical storage capacity
-C_TH = 20.0     # Thermal storage capacity
-COP = 3.0       # Heat Pump coefficient of performance
+C_TH = 5.0     # Thermal storage capacity
+COP = 3.0       # Heat Pump coefficient of performance (possibly optimistic/ sunny day)
 
 D_E = 10        # Maximum electrical discharge rate
 G_E = 10        # Maximum electrical charge rate

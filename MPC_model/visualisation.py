@@ -5,7 +5,7 @@ import numpy as np
 from config import *
 from data import *
 
-def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec):
+def plot_results(history_u, history_I, history_soc_E, history_E, history_y, price_grid_elec, appliance_demand=None):
     time_steps_96 = range(total_steps*2)
     hours = [t * delta for t in time_steps_96]
 
@@ -14,6 +14,7 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
     # --- Plot 1: Power Balance ---
     chp_power = history_u
     grid_import = history_I
+    battery_discharge = history_y
 
     total_demand = []
     for t in time_steps_96:
@@ -34,7 +35,7 @@ def plot_results(history_u, history_I, history_soc_E, history_E, price_grid_elec
         total_demand.append(d_t)
 
     axes[0].plot(hours, total_demand, 'k-', linewidth=2, label='Total Demand')
-    axes[0].stackplot(hours, chp_power, grid_import, labels=['CHP Gen', 'Grid Import'], alpha = 0.6, colors=['#1f77b4', '#ff7f0e'])
+    axes[0].stackplot(hours, chp_power, grid_import, battery_discharge, labels=['CHP Gen', 'Grid Import', 'Battery Discharge'], alpha = 0.6, colors=['#1f77b4', '#ff7f0e'])
     axes[0].set_ylabel('Power (kW)')
     axes[0].set_title('Building Power Balance')
     axes[0].legend(loc='upper left')

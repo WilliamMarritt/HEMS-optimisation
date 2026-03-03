@@ -5,18 +5,19 @@ import numpy as np
 from config import *
 from data import *
 
-def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
-    hours = [t * delta for t in time_steps]
+def plot_results(u_res, S_E_res, E_res, I_base_res, I_extra_res, grid_price):
+    time_steps_48h = range(total_steps *2)
+    hours = [t * delta for t in time_steps_48h]
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
     # --- Plot 1: Power Balance ---
-    chp_power = [u_res[t].varValue for t in time_steps]
-    grid_import = [I_res[t].varValue for t in time_steps]
+    chp_power = [u_res[t].varValue for t in time_steps_48h]
+    grid_import = [I_base_res[t].varValue + I_extra_res[t].varValue for t in time_steps_48h]
 
     total_demand = []
-    for t in time_steps:
-        d_t = electric_demand_per_house[t] * num_homes
+    for t in time_steps_48h:
+        d_t = electric_demand_per_house[t % total_steps] * num_homes
         for h in homes:
             for app in appliances:
                 name = app["name"]
@@ -24,8 +25,11 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
                 duration = int(app["Slots"])
                 is_running = 0
                 for look_back in range(duration):
-                    if (t - look_back) >= 0 and E_res[h, name, t - look_back].varValue > 0.9:
-                        is_running = 1
+                    # Visual wrap-around for Power Balance
+                    past_t = (t-look_back)% (total_steps * 2)
+                    for day in [0, 1]:
+                        if E_res[h, name, day, past_t].varValue > 0.9:
+                            is_running = 1
                 if is_running:
                     d_t += power
         total_demand.append(d_t)
@@ -39,12 +43,13 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
 
     # --- Plot 2: Battery SoC and Grid Price ---
     ax2 = axes[1]
-    soc = [S_E_res[t].varValue for t in time_steps]
+    soc = [S_E_res[t].varValue for t in time_steps_48h]
     line1 = ax2.plot(hours, soc, 'g-', label='Battery SoC (kWh)', linewidth=2)
     ax2.set_ylabel('Stored Energy (kWh)', color = 'b')
     ax2.tick_params(axis='y', labelcolor='b')
 
     ax2_price = ax2.twinx()
+    grid_price = grid_price + grid_price
     line2 = ax2_price.plot(hours, grid_price, 'r--', label='Grid Price (£/kWh)', linewidth=2)
     ax2_price.set_ylabel('Grid Price (£/kWh)', color='r')
     ax2_price.tick_params(axis='y', labelcolor='r')
@@ -57,11 +62,12 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
 
     # --- Plot 3: Appliance Schedule ---
     appliance_data = {
-            name: {'counts': [0] * total_steps, 'power': [0] * total_steps} 
+            name: {'counts': [0] * (total_steps*2), 'power': [0] * (total_steps*2)} 
             for name in app_names
         }
     
-    for t in time_steps:
+
+    for t in time_steps_48h:
         for app in appliances:
             name = app["name"]
             power = app["Power"]
@@ -70,10 +76,12 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
             for h in homes:
                 duration = int(app["Slots"])
                 for look_back in range(duration):
-                    if (t - look_back) >= 0 and E_res[h, name, t-look_back].varValue > 0.9:
+                    past_t = (t - look_back) % (total_steps *2)
+
+                    if any(E_res[h, name, day, past_t].varValue > 0.9 for day in [0, 1]):
                         count += 1 
                         break 
-            
+                
             appliance_data[name]['counts'][t] = count
             appliance_data[name]['power'][t]  = count * power
           
@@ -82,7 +90,7 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
 
     # Plot as a stacked bar chart 
     colors = cm.tab20.colors  # List of 20 colors
-    bottom = np.zeros(total_steps)
+    bottom = np.zeros(total_steps*2)
     
     for i, (name, data) in enumerate(sorted_appliances):
         power_series = data['power']
@@ -98,8 +106,8 @@ def plot_results(u_res, S_E_res, E_res, I_res, grid_price):
     axes[2].set_ylabel("Power used by Appliances (kW)")
     axes[2].set_ylim(0, ylim_top)  # Add some headroom above the peak
     axes[2].set_xlabel("Hour of Day")
-    axes[2].set_xticks(range(0, 25, 1))
-    axes[2].set_title("Aggregate Appliance Scheduling (Diversity)")
+    axes[2].set_xticks(range(0, 47, 1))
+    axes[2].set_title(f"Aggregate Appliance Scheduling with peak demand threshold at {I_max} kW)")
     axes[2].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     axes[2].grid(True, axis='y', alpha=0.3)
 
