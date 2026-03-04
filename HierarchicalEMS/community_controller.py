@@ -1,6 +1,6 @@
 # community_controller.py
 from config import *
-
+import concurrent.futures
 
 
 class CommunityController:
@@ -23,25 +23,23 @@ class CommunityController:
             proposed_profiles = []
             house_data_packages = []
 
-            for house in house_agents:
-                data = house.generate_proposed_schedule(current_step, current_penalties)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(house_agents)) as executor:
+                # executor.map runs them all at once, but returns the 'data' results 
+                # in the exact same order as the 'house_agents' list
+                results = list(executor.map(lambda h: h.generate_proposed_schedule(current_step, current_penalties), house_agents))
 
+            for house, data in zip(house_agents, results):
                 if data["status"] == "Optimal":
                     proposed_profiles.append(data["proposed_import_profile"])
                     house_data_packages.append(data)
                 else:
-                    # If house is infeasible, assume imports 1kW and takes no action (safe mode)
-                    safe_mode_profile = [1.0] * 48
-                    proposed_profiles.append(safe_mode_profile)
-                    house_data_packages.append({"house_id": house.house_id, 
-                                                "status": "Safe_mode",
-                                                "planned_import_k0": 1.0,
-                                                "planned_charge_k0": 0,
-                                                "planned_discharge_k0": 0,
-                                                "next_soc_calculation": house.current_soc,
-                                                "explainability": "Controller Fallback Mode"})
+                    # If house is infeasible, take whatever breaches necessary
+                    proposed_profiles.append(data["proposed_import_profile"])
+                    house_data_packages.append(data)
                     
             total_community_demand = [sum(x) for x in zip(*proposed_profiles)]
+
+
 
             breach_detected = False
             for k in range(48):

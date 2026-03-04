@@ -8,6 +8,7 @@ from visualisation import plot_simulation_results
 from data import *
 import json
 import random
+import concurrent.futures
 
 def run_simulation():
     print("Initialising Microgrid Community")
