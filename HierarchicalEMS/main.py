@@ -5,7 +5,7 @@ from config import *
 from house_agent import HouseAgent
 from community_controller import CommunityController
 from visualisation import plot_simulation_results
-from data import *
+from data import *  
 import json
 import random
 import concurrent.futures
@@ -17,6 +17,7 @@ def run_simulation():
 
     history_community_demand = []
     history_h0_soc = []
+    history_h0_soc_th = []
     history_h0_fridge_temp = []
     history_h0_freezer_temp = []
     history_actual_community_demand = []
@@ -25,6 +26,7 @@ def run_simulation():
     h0_discharge = []
     h0_charge = []
     h0_solar = []
+    h0_heat_demand = heat_demand_per_house*2
 
     # locks the random shifting to a specific repeatable timeline
     random.seed(42)
@@ -40,16 +42,31 @@ def run_simulation():
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
         
         step_physical_demand = 0.0
-        current_solar_per_house = PV_capacity * solar_profile[step % total_steps]
+        for house in houses:
+            # Base Load
+            h_demand = house.personal_elec_demand[step % total_steps]
+
+            h_demand += house.history_E.get(("Heat_Pump", step), 0.0)
+            h_demand += house.history_E.get(("Fridge", step), 0.0) * 0.3
+            h_demand += house.history_E.get(("Freezer", step), 0.0) * 0.3
+            h_demand += house.history_E.get(("Rogue_Load", step), 0.0)
+
+            # Scheduled Appliances
+            for app in appliances:
+                name = app["name"]
+                if app.get("power_type") == "flexible":
+                    h_demand += house.history_E.get((name, step), 0.0)
+                else:
+                    # Constant appliances running from previous steps
+                    duration = int(app["Slots"])
+                    for past_k in range(duration):
+                        past_t = step - past_k
+                        if past_t >= 0 and house.history_E.get((name, past_t), 0) == 1:
+                            h_demand += app["Power"]
+                            break
+
         
-        for sched in approved_schedules:
-            h_import = sched.get("planned_import_k0", 0.0)
-            h_charge = sched.get("planned_charge_k0", 0.0)
-            h_discharge = sched.get("planned_discharge_k0", 0.0)
-            
-            # The Power Balance Formula
-            h_load = h_import + current_solar_per_house + h_discharge - h_charge
-            step_physical_demand += h_load
+            step_physical_demand += h_demand
         
         # for total power demand plot
         history_actual_community_demand.append(step_physical_demand)
@@ -70,6 +87,8 @@ def run_simulation():
                 print(f"    House 0 Status: {house_schedule['explainability']} (Battery: {house.current_soc:.2f} kWh){app_text}")
 
         history_h0_soc.append(houses[0].current_soc)
+        history_h0_soc_th.append(houses[0].current_soc_th)
+
         history_h0_fridge_temp.append(houses[0].current_T_fridge)
         history_h0_freezer_temp.append(houses[0].current_T_freezer)
         
@@ -211,7 +230,9 @@ def run_simulation():
         h0_fridge_temp=history_h0_fridge_temp,
         h0_freezer_temp=history_h0_freezer_temp,
         community_actual_demand=history_actual_community_demand,
-        h0_heat_pump=h0_heat_pump
+        h0_heat_pump=h0_heat_pump,
+        h0_thermal_storage=history_h0_soc_th,
+        h0_heat_demand=h0_heat_demand        
     )
 
 if __name__ == "__main__":

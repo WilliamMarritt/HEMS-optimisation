@@ -12,7 +12,7 @@ class HouseAgent:
         # House physical hardware
         self.house_id = house_id
         self.house_limit = house_limit
-        self.pv_capacity = pv_capacity
+        self.pv_capacity = pv_capacity * 0
         self.battery_capacity = battery_capacity
 
         self.current_soc =  S_init
@@ -87,10 +87,10 @@ class HouseAgent:
 
         # Chance constraint setup
         # ~ 0.75 kW standard deviation
-        sigma_human = 0.75
+        sigma_human = 0.20
 
         # Define risk tolerance, 0.05 = 95% guarantee of safety
-        alpha = 0.05
+        alpha = 0.15
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
         z_score = stats.norm.ppf(1-alpha)
         safety_margin = z_score * sigma_human
@@ -121,7 +121,14 @@ class HouseAgent:
         for k in mpc_steps:
             model += y[k] <= D_E, f"Discharge_Rate_Limit{k}"
             model += z[k] <= G_E, f"Charge_Limit{k}"
-            model += I[k] <= effective_limit +  I_excess[k], f"Dynamic_1kW_limit_{k}"
+            model += I[k] <= self.house_limit +  I_excess[k], f"Dynamic_limit_{k}"
+
+            # The sum of unused grid capacity + unused battery discharge + interruptible charging
+            # must always be capable of absorbing the suddent chance-constraint spikes
+            model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
+
+            # The battery is forced to keep enough energy to survive a 30-minute spike
+            model += S_E[k] >= (safety_margin * delta) / nu_E, f"Energy_Reserve_{k}"
 
             # Storage Dynamics
             if k == 0:

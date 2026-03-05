@@ -39,8 +39,6 @@ class CommunityController:
                     
             total_community_demand = [sum(x) for x in zip(*proposed_profiles)]
 
-
-
             breach_detected = False
             for k in range(48):
                 if total_community_demand[k] > self.limit:

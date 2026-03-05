@@ -25,7 +25,7 @@ nu_TH = .098    # Thermal efficiency of ESS
 
 xi_CHP = 0.5445
 
-PV_capacity = 5.1
+PV_capacity = 1.0
 
 # Cost Parameters
 wear_cost_elec = 0.005
