@@ -111,7 +111,7 @@ def run_simulation():
     print(f"Time taken: {end_time - start_time:.2f} seconds")
     print(f"Maximum Community Peak Demand hit: {max(history_community_demand):.2f} kW")
     print(f"Transformer Limit: {I_max} kW")
-
+ 
     if max(history_community_demand) <= I_max + 0.1:
         print("Success: the limit was protected")
     else:
@@ -217,6 +217,11 @@ def run_simulation():
     
     appliance_power_data = {name: data['power'] for name, data in sorted_appliances}
 
+    all_houses_import = []
+    for h in houses:
+        house_history = [h.history_E.get(("Grid_Import", step), 0.0) for step in range(total_steps*2)]
+        all_houses_import.append(house_history)
+
     plot_simulation_results(
         community_demand=history_community_demand,
         transformer_limit=I_max,
@@ -232,7 +237,8 @@ def run_simulation():
         community_actual_demand=history_actual_community_demand,
         h0_heat_pump=h0_heat_pump,
         h0_thermal_storage=history_h0_soc_th,
-        h0_heat_demand=h0_heat_demand        
+        h0_heat_demand=h0_heat_demand,
+        all_houses_import=all_houses_import        
     )
 
 if __name__ == "__main__":

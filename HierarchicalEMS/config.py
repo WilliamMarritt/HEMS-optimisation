@@ -2,6 +2,9 @@
 
 # config.py
 
+# Community Settings
+num_homes = 5
+homes = range(num_homes)
 I_max = 10
 
 # Simulation Time Settings
@@ -12,7 +15,7 @@ time_steps = range(total_steps)  # 48 half-hourly time steps for a 24-hour perio
 
 # Physical System Constants (parameters taken from the paper)
 
-C_E = 10.0      # Electrical storage capacity
+C_E = 2.5      # Electrical storage capacity
 C_TH = 5.0     # Thermal storage capacity
 COP = 3.0       # Heat Pump coefficient of performance (possibly optimistic/ sunny day)
 
@@ -30,8 +33,4 @@ PV_capacity = 1.0
 # Cost Parameters
 wear_cost_elec = 0.005
 wear_cost_therm = 0.001
-price_gas = 0.08
 
-# Community Settings
-num_homes = 5
-homes = range(num_homes)

@@ -12,7 +12,7 @@ class HouseAgent:
         # House physical hardware
         self.house_id = house_id
         self.house_limit = house_limit
-        self.pv_capacity = pv_capacity * 0
+        self.pv_capacity = pv_capacity
         self.battery_capacity = battery_capacity
 
         self.current_soc =  S_init
@@ -90,7 +90,7 @@ class HouseAgent:
         sigma_human = 0.20
 
         # Define risk tolerance, 0.05 = 95% guarantee of safety
-        alpha = 0.15
+        alpha = 0.01
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
         z_score = stats.norm.ppf(1-alpha)
         safety_margin = z_score * sigma_human
@@ -107,6 +107,8 @@ class HouseAgent:
         for app in appliances:
             if app.get("power_type") == "flexible":
                 E_deficit[app["name"]] = pulp.LpVariable(f"Defecit_{app['name']}_H{self.house_id}", lowBound=0, cat="Continuous")
+
+        Reserve_deficit = pulp.LpVariable.dicts(f"Reserve_deficit_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
 
         for app in appliances:
             name = app["name"]
@@ -128,7 +130,8 @@ class HouseAgent:
             model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            model += S_E[k] >= (safety_margin * delta) / nu_E, f"Energy_Reserve_{k}"
+            reserve_hours = 2
+            model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
 
             # Storage Dynamics
             if k == 0:
@@ -292,6 +295,7 @@ class HouseAgent:
         total_cost = pulp.lpSum([
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) + 
             (1000 * I_excess[k]) +      # penalty for going over 1kW
+            (50 * Reserve_deficit[k]) +       # penalty for an empty battery
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
             for k in mpc_steps
@@ -318,7 +322,7 @@ class HouseAgent:
             next_soc = pulp.value(S_E[0])
 
             if current_discharge > 0 and community_penalty_prices[0] > 0:
-                reason = f"Discharging {current_discharge:.2f}kW to protect the community transformer and avoid the penalty fee"
+                reason = f"Discharging {current_discharge:.2f}kW to protect the grid import limit and avoid the penalty fee"
             elif current_charge > 0 and local_solar_gen[0] > current_import:
                 reason = f"Charging {current_charge:.2f}kW to soak up free excess solar energy."
             elif current_discharge > 0 and local_prices[0] > 0.20: # Assuming 20p is peak pricing
@@ -439,6 +443,7 @@ class HouseAgent:
             self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
             started_apps = accepted_schedule.get("starting_appliances", [])
             self.history_E[("Heat_Pump", current_step)] = accepted_schedule.get("heat_pump_power_k0", 0.0)
+            self.history_E[("Grid_Import", current_step)] = accepted_schedule["planned_import_k0"]
 
             for app in appliances:
                 if app.get("power_type") == "flexible":

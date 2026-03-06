@@ -63,7 +63,8 @@ class CommunityController:
             
             # Print exactly what each house is doing at that specific problem step
             house_loads = [profiles[worst_k] for profiles in proposed_profiles]
-            breakdown = " | ".join([f"H{i}: {load:.2f}kW" for i, load in enumerate(house_loads)])
+            max_power = I_max/num_homes
+            breakdown = " | ".join([f"H{i}: {load:.2f}kW" for i, load in enumerate(house_loads) if load > max_power])            
             print(f"      -> Culprits: {breakdown}")
 
         return final_approved_data, total_community_demand[0]

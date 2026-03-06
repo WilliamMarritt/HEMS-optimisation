@@ -9,7 +9,8 @@ from config import COP  # Import COP to calculate thermal output
 def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_prices, appliance_data,
                             h0_import=None, h0_discharge=None, h0_solar=None, h0_charge=None, 
                             h0_fridge_temp=None, h0_freezer_temp=None, community_actual_demand=None, 
-                            h0_heat_pump=None, h0_thermal_storage=None, h0_heat_demand=None) :
+                            h0_heat_pump=None, h0_thermal_storage=None, h0_heat_demand=None,
+                            all_houses_import=None) :
     
     steps = len(community_demand)
     time_axis_hours = np.arange(steps) / 2.0
@@ -31,8 +32,10 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     ax5_top = fig.add_subplot(211)
     ax5_bottom = fig.add_subplot(212, sharex=ax1_top)
 
+    ax6 = fig.add_subplot(111)
+
     # Apply the 3-hour ticks to all axes
-    for ax in [ax1_top, ax1_bottom, ax2, ax3, ax4, ax5_top, ax5_bottom]:
+    for ax in [ax1_top, ax1_bottom, ax2, ax3, ax4, ax5_top, ax5_bottom, ax6]:
         ax.set_xticks(x_ticks)
 
     # SLIDE 1: Community Demand & Grid Prices
@@ -170,7 +173,26 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
             l5bp, lab5bp = ax5_bot_p.get_legend_handles_labels()
             ax5_bottom.legend(l5b + l5bp, lab5b + lab5bp, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 
-  
+    if all_houses_import is not None:
+        bottom_import = np.zeros(steps)
+        num_houses = len(all_houses_import)
+        cmap = plt.get_cmap('turbo')
+        house_colors = [cmap(i / num_houses) for i in range(num_houses)]        
+        for i, house_import in enumerate(all_houses_import):
+            ax6.bar(time_axis_hours, house_import, bottom=bottom_import, width=0.5, 
+                    label=f"House {i}", align='edge', color=house_colors[i % len(house_colors)], alpha=0.85)
+            bottom_import += np.array(house_import)
+            
+        ax6.axhline(y=transformer_limit, color='red', linestyle='--', linewidth=2, label=f"Transformer Limit ({transformer_limit} kW)")
+        ax6.set_ylabel("Grid Import (kW)", fontweight='bold')
+        ax6.set_xlabel("Time (Hours)", fontweight='bold')
+        ax6.set_title("Slide 6/6: Community Grid Import Breakdown by House", fontsize=14, fontweight='bold')
+        ax6.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+        ax6.grid(True, axis='y', linestyle=':', alpha=0.6)
+
+
+
+
     slide1_axes = [ax1_top, ax1_bottom, ax1_price]
     if h0_solar is not None and h0_soc is not None:
         slide1_axes.append(ax1_soc)
@@ -187,7 +209,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         slide5_axes.append(ax5_bottom)
         if has_freezer_power: slide5_axes.append(ax5_bot_p)
         
-    slides = [slide1_axes, [ax2], [ax3], slide4_axes, slide5_axes]
+    slides = [slide1_axes, [ax2], [ax3], slide4_axes, slide5_axes, [ax6]]
     
     class SlideController:
         ind = 0
