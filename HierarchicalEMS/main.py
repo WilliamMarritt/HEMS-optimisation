@@ -40,6 +40,13 @@ def run_simulation():
         print(f"Time Step {step}")
 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
+        # Calculate Feed-Foward Community Slack
+        total_planned_import = sum(sched["planned_import_k0"] for sched in approved_schedules)
+        global_slack = max(0.0, I_max - total_planned_import)
+
+        for sched in approved_schedules:
+            sched["community_slack_k0"] = global_slack
+        
         
         step_physical_demand = 0.0
         for house in houses:

@@ -130,7 +130,7 @@ class HouseAgent:
             model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            reserve_hours = 2
+            reserve_hours = 0
             model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
 
             # Storage Dynamics
@@ -367,6 +367,7 @@ class HouseAgent:
                 "heat_pump_power_k0": pulp.value(P_HP[0]),
                 "flexible_powers_k0": flexible_powers,
 
+
             }
         else:
             # Fallback Logic
@@ -430,42 +431,138 @@ class HouseAgent:
 
 
         if accepted_schedule["status"] == "Optimal":
-            self.current_soc = accepted_schedule["next_soc_calculation"]
-            self.current_soc_th = accepted_schedule.get("next_soc_th_calculation", self.current_soc_th)
 
+            # Real Time Adjusting Stage (RTAS) Control
+            # Read MPC's original plan
+            planned_discharge = accepted_schedule["planned_discharge_k0"]
+            planned_import = accepted_schedule["planned_import_k0"]
+            community_slack = accepted_schedule.get("community_slack_k0", 0.0)
+            dynamic_limit = self.house_limit + community_slack
+
+            hp_power = accepted_schedule.get("heat_pump_power_k0", 0.0)
+            flex_apps = accepted_schedule.get("flexible_powers_k0", {}).copy()            
+            rogue_spike = accepted_schedule.get("rogue_power_k0", 0.0)
+
+            spike_duration = 5.0/60.0 if rogue_spike > 0 else 0.0
+            normal_duration = delta-spike_duration
+
+            emergency_discharge = 0.0
+            shedded_hp = 0.0
+            shedded_flex = {name: 0.0 for name in flex_apps}
+
+            if planned_import + rogue_spike > dynamic_limit:
+                excess_demand = (planned_import + rogue_spike) - dynamic_limit
+                available_inverter_capacity = D_E - planned_discharge
+                available_energy_kw = (self.current_soc * nu_E) / spike_duration if spike_duration > 0 else 0.0
+
+                emergency_discharge = min(excess_demand, available_inverter_capacity)
+                excess_demand -= emergency_discharge
+
+                if excess_demand > 0.01:
+                    if hp_power > 0:
+                        shedded_hp = min(excess_demand, hp_power)
+                        excess_demand -= shedded_hp
+                        print(f"    [RTAS] H{self.house_id} Shed {shedded_hp:.2f}kW of Heat Pump for {spike_duration*60:.0f} mins")
+
+                    for name, pwr in flex_apps.items():
+                        if excess_demand > 0.01 and pwr > 0:
+                            shed = min(excess_demand, pwr)
+                            shedded_flex[name] = shed
+                            excess_demand -= shed
+                            print(f"  [RTAS] H{self.house_id} Shed {shed:.2f}kW of {name} for {spike_duration*60:.0f} mins")
+                    
+            # Battery outputs (planned + emergency). Flex apps draw (planned - shed)
+            # Battery output (planned) Flex apps draw (planned)
+
+            energy_discharged_spike = (planned_discharge + emergency_discharge) * spike_duration
+            energy_discharged_normal = planned_discharge * normal_duration
+            total_discharge_energy = energy_discharged_spike + energy_discharged_normal
+
+            # Recalculate SoC
+            actual_charge = accepted_schedule["planned_charge_k0"]
+            true_next_soc = self.current_soc + (nu_E * delta * actual_charge) - (total_discharge_energy / nu_E)
+            self.current_soc = true_next_soc
+            self.current_soc_th = accepted_schedule.get("next_soc_th_calculation", self.current_soc_th)
             self.current_T_fridge = accepted_schedule["next_T_fridge"]
             self.current_T_freezer = accepted_schedule["next_T_freezer"]
+
+
+            # Time weighted logging for graphs
+            avg_hp = ((hp_power - shedded_hp) * spike_duration + hp_power * normal_duration) / delta
+            self.history_E[("Heat_Pump", current_step)] = avg_hp
+
+            avg_rogue = (rogue_spike * spike_duration) / delta
+            self.history_E[("Rogue_Load", current_step)] = avg_rogue
+
+            avg_discharge = total_discharge_energy / delta
+            self.history_E[("Battery_Discharge", current_step)] = avg_discharge
+
+            for name, pwr in flex_apps.items():
+                avg_flex = ((pwr - shedded_flex[name]) * spike_duration + pwr * normal_duration) / delta
+                self.history_E[(name, current_step)] = avg_flex
+
+                # Update the delivered energy tracker so that the MPC knows it missed some charge
+                if current_step % total_steps == int(next(a["T_S"] for a in appliances if a["name"] == name) * steps_per_hour):
+                    self.flexible_energy_delivered[name] = 0.0
+                self.flexible_energy_delivered[name] += avg_flex * delta
             
-            # Manually log the fridge into history_E if the compressor fired
+            # Log standard appliances
             self.history_E[("Fridge", current_step)] = accepted_schedule["fridge_compressor_k0"]
             self.history_E[("Freezer", current_step)] = accepted_schedule["freezer_compressor_k0"]
+            
+            # True Grid Import Average
+            avg_import = planned_import + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
+            self.history_E[("Grid_Import", current_step)] = max(0.0, avg_import)
+            
 
-            self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
-            started_apps = accepted_schedule.get("starting_appliances", [])
-            self.history_E[("Heat_Pump", current_step)] = accepted_schedule.get("heat_pump_power_k0", 0.0)
-            self.history_E[("Grid_Import", current_step)] = accepted_schedule["planned_import_k0"]
+            # # Check if a rogue import push over the limit
+            # physical_import = planned_import + rogue_spike
 
-            for app in appliances:
-                if app.get("power_type") == "flexible":
-                    name = app["name"]
-                    abs_t = current_step % total_steps
-                    abs_start = int(app["T_S"] * steps_per_hour)
+            # if physical_import > self.dynamic_limit:
+            #     excess_demand = physical_import - self.house_limit
+            #     available_inverter_capacity = D_E - planned_discharge
+            #     available_energy_kw = (self.current_soc * nu_E)/delta
+            #     emergency_discharge = min(excess_demand, available_inverter_capacity)
+
+            #     planned_discharge += emergency_discharge
+            #     excess_demand -= emergency_discharge
+            #     physical_import -= emergency_discharge
+
+
+
+            # # self.current_soc = accepted_schedule["next_soc_calculation"]
+            # self.current_soc_th = accepted_schedule.get("next_soc_th_calculation", self.current_soc_th)
+
+            # self.current_T_fridge = accepted_schedule["next_T_fridge"]
+            # self.current_T_freezer = accepted_schedule["next_T_freezer"]
+            
+            # # Manually log the fridge into history_E if the compressor fired
+            # self.history_E[("Fridge", current_step)] = accepted_schedule["fridge_compressor_k0"]
+            # self.history_E[("Freezer", current_step)] = accepted_schedule["freezer_compressor_k0"]
+
+            # # self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
+            # started_apps = accepted_schedule.get("starting_appliances", [])
+            # # self.history_E[("Heat_Pump", current_step)] = accepted_schedule.get("heat_pump_power_k0", 0.0)
+            # # self.history_E[("Grid_Import", current_step)] = accepted_schedule["planned_import_k0"]
+
+            # for app in appliances:
+            #     if app.get("power_type") == "flexible":
+            #         name = app["name"]
+            #         abs_t = current_step % total_steps
+            #         abs_start = int(app["T_S"] * steps_per_hour)
                     
-                    # Reset memory at the exact start of its new daily window
-                    if abs_t == abs_start:
-                        self.flexible_energy_delivered[name] = 0.0 
+            #         # Reset memory at the exact start of its new daily window
+            #         if abs_t == abs_start:
+            #             self.flexible_energy_delivered[name] = 0.0 
                         
-                    # Add whatever power was dispatched in this physical step
-                    power_k0 = accepted_schedule.get("flexible_powers_k0", {}).get(name, 0.0)
-                    self.flexible_energy_delivered[name] += power_k0 * delta
+            #         # Add whatever power was dispatched in this physical step
+            #         power_k0 = accepted_schedule.get("flexible_powers_k0", {}).get(name, 0.0)
+            #         self.flexible_energy_delivered[name] += power_k0 * delta
             
-            
+            started_apps = accepted_schedule.get("starting_appliances", [])
             for app_name in started_apps:
                 self.appliances_already_run[app_name] = True
                 self.history_E[(app_name, current_step)] = 1
                 
-            flexible_powers = accepted_schedule.get("flexible_powers_k0", {})
-
-            for name, power in flexible_powers.items():
-                self.history_E[(name, current_step)] = power
+        
 
