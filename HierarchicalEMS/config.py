@@ -15,7 +15,7 @@ time_steps = range(total_steps)  # 48 half-hourly time steps for a 24-hour perio
 
 # Physical System Constants (parameters taken from the paper)
 
-C_E = 2.5      # Electrical storage capacity
+C_E = 11      # Electrical storage capacity
 C_TH = 5.0     # Thermal storage capacity
 COP = 3.0       # Heat Pump coefficient of performance (possibly optimistic/ sunny day)
 

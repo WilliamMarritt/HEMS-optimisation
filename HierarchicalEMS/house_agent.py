@@ -24,8 +24,10 @@ class HouseAgent:
         self.current_T_freezer = -18.0
 
         self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
-        self.sigma_human = 0.20                 # ~ 0.75 kW standard deviation
+        self.sigma_human = 0.75                 # ~ 0.75 kW standard deviation
 
+        self.daily_total_uncontrolled_energy = 0.0
+        self.daily_total_controlled_energy = 0.0
     
         # Add randomness
         magnitude = random.uniform(0.7, 1.3)    # +/- 30% of total energy use
@@ -37,10 +39,7 @@ class HouseAgent:
             for i in range(total_len)
         ]
 
-        self.personal_heat_demand = [
-        heat_demand_per_house[(i - time_shift) % total_len] * magnitude
-        for i in range(total_len)
-        ]   
+        self.personal_heat_demand = heat_demand_per_house.copy()   
 
         self.flexible_energy_delivered = {}
         for app in appliances:
@@ -427,9 +426,45 @@ class HouseAgent:
         
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
-        # if current_step > 0 and current_step % total_steps == 0:
-        #     for app_name in self.appliances_already_run:
-        #         self.appliances_already_run[app_name]= False
+
+        # Calculate open loop control power usage
+        abs_t = current_step % total_steps
+        rogue_spike = accepted_schedule.get("rogue_power_k0", 0.0)
+        open_loop_demand = self.personal_elec_demand[abs_t] + rogue_spike
+        
+        # Dumb Heat Pump: draws exactly what is needed right now, no thermal storage buffer
+        # Dumb Fridge & Freezer: Steady-state compressor draw to maintain temp, ~0.135kW each
+        # Dumb Appliances (They turn on exactly at their preferred start window)
+
+        open_loop_demand += self.personal_heat_demand[abs_t] / COP
+        open_loop_demand += 0.27 
+        
+        for app in self.personal_appliances:
+            start_step = int(app["T_S"] * steps_per_hour)
+            
+            if app.get("power_type") == "constant":
+                duration = int(app["Slots"])
+                power = app["Power"]
+            else: # Flexible (Unsmart EV chargers just plug in and draw max power instantly)
+                duration = int((app["Required_Energy"] / app["Max_Power"]) * steps_per_hour) + 1
+                power = app["Max_Power"]
+                
+            end_step = (start_step + duration) % total_steps
+            
+            # Check if this exact step falls inside the "dumb" running window
+            if start_step <= end_step:
+                if start_step <= abs_t < end_step:
+                    open_loop_demand += power
+            else: # The running window crosses midnight
+                if abs_t >= start_step or abs_t < end_step:
+                    open_loop_demand += power
+
+        # Calculate Unsmart Grid Import (Demand minus whatever the solar is doing right now)
+        solar_gen = self.pv_capacity * solar_profile[abs_t]
+        open_loop_import = max(0.0, open_loop_demand - solar_gen)
+        
+        self.history_E[("Open_Loop_Import", current_step)] = open_loop_import
+        self.daily_total_uncontrolled_energy += open_loop_import * delta
 
 
         if accepted_schedule["status"] == "Optimal":
@@ -515,11 +550,14 @@ class HouseAgent:
             # True Grid Import Average
             avg_import = planned_import + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
             self.history_E[("Grid_Import", current_step)] = max(0.0, avg_import)
-                        
+            self.daily_total_controlled_energy += max(0.0, avg_import) * delta
+
+
             started_apps = accepted_schedule.get("starting_appliances", [])
             for app_name in started_apps:
                 self.appliances_already_run[app_name] = True
                 self.history_E[(app_name, current_step)] = 1
+                
                 
         
 

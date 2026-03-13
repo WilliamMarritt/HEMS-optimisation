@@ -8,9 +8,11 @@ from visualisation import plot_simulation_results
 from data import *  
 import json
 import random
-import concurrent.futures
 
 def run_simulation():
+    # locks the random shifting to a specific repeatable timeline
+    random.seed(42)
+
     print("Initialising Microgrid Community")
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]    
     community = CommunityController(transformer_limit=I_max)
@@ -28,9 +30,7 @@ def run_simulation():
     h0_solar = []
     h0_heat_demand = heat_demand_per_house*2
 
-    # locks the random shifting to a specific repeatable timeline
-    random.seed(42)
-
+ 
     simulation_steps = 96
 
     print(f"Starting simulation for {num_homes} homes over {simulation_steps} steps")
@@ -102,22 +102,36 @@ def run_simulation():
 
         h0_solar.append(PV_capacity * solar_profile[step % total_steps])
         h0_sched = next((item for item in approved_schedules if item["house_id"] == 0))
-        h0_import.append(h0_sched["planned_import_k0"])
-        h0_discharge.append(h0_sched["planned_discharge_k0"])
-        h0_charge.append(h0_sched["planned_charge_k0"]
-        
-        
-        )
+        h0_import.append(houses[0].history_E.get(("Grid_Import", step), 0.0))
+        h0_discharge.append(houses[0].history_E.get(("Battery_Discharge", step), 0.0))
+        h0_charge.append(h0_sched["planned_charge_k0"])
         
 
         
         print("-" * 25)
 
     end_time = time.time()
+
+    print("\n" + "="*40)
+    print("      TOTAL SIMULATION HOUSE ENERGY SUMMARY")
+    print("="*40)
+    for house in houses:
+        # Find the absolute highest peak from the open loop vs closed loop
+        max_raw_peak = max([house.history_E[("Open_Loop_Import", s)] for s in range(simulation_steps)])
+        max_controlled_peak = max([house.history_E.get(("Grid_Import", s), 0) for s in range(simulation_steps)])
+        
+        print(f"House {house.house_id}:")
+        print(f"  Unsmart House (Open Loop):")
+        print(f"    - Grid Import Peak : {max_raw_peak:.2f} kW")
+        print(f"    - Total Energy Used (48h): {house.daily_total_uncontrolled_energy:.2f} kWh")
+        print(f"  Smart HEMS (Closed Loop):")
+        print(f"    - Grid Import Peak : {max_controlled_peak:.2f} kW")
+        print(f"    - Total Energy Used (48h): {house.daily_total_controlled_energy:.2f} kWh\n")
+
     print("Simulation Complete")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
     print(f"Maximum Community Peak Demand hit: {max(history_community_demand):.2f} kW")
-    print(f"Transformer Limit: {I_max} kW")
+    print(f"Power Draw Limit: {I_max} kW")
  
     if max(history_community_demand) <= I_max + 0.1:
         print("Success: the limit was protected")

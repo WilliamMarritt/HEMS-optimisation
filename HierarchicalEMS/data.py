@@ -1,5 +1,31 @@
 # data.py
 from config import total_steps, steps_per_hour
+import pandas as pd
+import numpy as np
+
+# Load the CREST CSV
+crest_df = pd.read_csv('../../Crest Data/CrestData_5house_June_WD.csv', skiprows=1)
+crest_df = crest_df.drop([0, 1]).reset_index(drop=True)
+
+crest_df["Dwelling index"] = crest_df['Dwelling index'].astype(int)
+crest_df["Space_Heat_W"] = crest_df['Heat output from primary heating system to space'].astype(float)
+crest_df["Water_heat_W"] = crest_df['Heat output from primary heating system to hot water'].astype(float)
+
+crest_df['Total_Thermal_Demand_kW'] = (crest_df['Space_Heat_W'] + crest_df["Water_heat_W"]) / 1000.0
+
+house1_thermal = crest_df[crest_df['Dwelling index'] == 1].reset_index(drop=True)
+
+heat_demand_per_house = []
+
+# Match CREST time steps to 30 min intervals
+for step in range(48):
+    chunk = house1_thermal['Total_Thermal_Demand_kW'].iloc[step*30: (step+1)*30]
+
+    heat_demand_per_house.append(chunk.mean())
+
+# Run for 96 steps
+heat_demand_per_house = heat_demand_per_house + heat_demand_per_house
+
 
 # Auto-generated demand profiles for testing
 electric_demand_per_house = [0.15] * total_steps # Low background load
