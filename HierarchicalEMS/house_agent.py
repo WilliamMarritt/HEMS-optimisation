@@ -16,12 +16,16 @@ class HouseAgent:
         self.battery_capacity = battery_capacity
 
         self.current_soc =  S_init
-        self.current_soc_th = 0.05 * C_TH
+        self.current_soc_th = 0.25 * C_TH
         self.appliances_already_run = {app["name"]: False for app in appliances}
         self.history_E = {}
 
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
+
+        self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.sigma_human = 0.20                 # ~ 0.75 kW standard deviation
+
     
         # Add randomness
         magnitude = random.uniform(0.7, 1.3)    # +/- 30% of total energy use
@@ -86,14 +90,9 @@ class HouseAgent:
         P_comp_fz = pulp.LpVariable.dicts(f"Freezer_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
 
         # Chance constraint setup
-        # ~ 0.75 kW standard deviation
-        sigma_human = 0.20
-
-        # Define risk tolerance, 0.05 = 95% guarantee of safety
-        alpha = 0.01
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
-        z_score = stats.norm.ppf(1-alpha)
-        safety_margin = z_score * sigma_human
+        z_score = stats.norm.ppf(1- self.alpha)
+        safety_margin = z_score * self.sigma_human
 
         # Chance Constraint implementation
         # Shrink the house limit by the safety margin, if the margin is larger than the limit, floor it to prevent negative
@@ -371,8 +370,11 @@ class HouseAgent:
             }
         else:
             # Fallback Logic
+            print(f"House {self.house_id} SOLVER FAILED - Triggering Dumb Fallback")
+            
             starting_appliances = []
             non_optimal_profile = [0.0] *  horizon
+
 
             for app in appliances:
                 name = app["name"]
@@ -443,7 +445,7 @@ class HouseAgent:
             flex_apps = accepted_schedule.get("flexible_powers_k0", {}).copy()            
             rogue_spike = accepted_schedule.get("rogue_power_k0", 0.0)
 
-            spike_duration = 5.0/60.0 if rogue_spike > 0 else 0.0
+            spike_duration = random.uniform(1.0, 29.0) / 60.0 if rogue_spike > 0 else 0.0
             normal_duration = delta-spike_duration
 
             emergency_discharge = 0.0
@@ -513,52 +515,7 @@ class HouseAgent:
             # True Grid Import Average
             avg_import = planned_import + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
             self.history_E[("Grid_Import", current_step)] = max(0.0, avg_import)
-            
-
-            # # Check if a rogue import push over the limit
-            # physical_import = planned_import + rogue_spike
-
-            # if physical_import > self.dynamic_limit:
-            #     excess_demand = physical_import - self.house_limit
-            #     available_inverter_capacity = D_E - planned_discharge
-            #     available_energy_kw = (self.current_soc * nu_E)/delta
-            #     emergency_discharge = min(excess_demand, available_inverter_capacity)
-
-            #     planned_discharge += emergency_discharge
-            #     excess_demand -= emergency_discharge
-            #     physical_import -= emergency_discharge
-
-
-
-            # # self.current_soc = accepted_schedule["next_soc_calculation"]
-            # self.current_soc_th = accepted_schedule.get("next_soc_th_calculation", self.current_soc_th)
-
-            # self.current_T_fridge = accepted_schedule["next_T_fridge"]
-            # self.current_T_freezer = accepted_schedule["next_T_freezer"]
-            
-            # # Manually log the fridge into history_E if the compressor fired
-            # self.history_E[("Fridge", current_step)] = accepted_schedule["fridge_compressor_k0"]
-            # self.history_E[("Freezer", current_step)] = accepted_schedule["freezer_compressor_k0"]
-
-            # # self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
-            # started_apps = accepted_schedule.get("starting_appliances", [])
-            # # self.history_E[("Heat_Pump", current_step)] = accepted_schedule.get("heat_pump_power_k0", 0.0)
-            # # self.history_E[("Grid_Import", current_step)] = accepted_schedule["planned_import_k0"]
-
-            # for app in appliances:
-            #     if app.get("power_type") == "flexible":
-            #         name = app["name"]
-            #         abs_t = current_step % total_steps
-            #         abs_start = int(app["T_S"] * steps_per_hour)
-                    
-            #         # Reset memory at the exact start of its new daily window
-            #         if abs_t == abs_start:
-            #             self.flexible_energy_delivered[name] = 0.0 
                         
-            #         # Add whatever power was dispatched in this physical step
-            #         power_k0 = accepted_schedule.get("flexible_powers_k0", {}).get(name, 0.0)
-            #         self.flexible_energy_delivered[name] += power_k0 * delta
-            
             started_apps = accepted_schedule.get("starting_appliances", [])
             for app_name in started_apps:
                 self.appliances_already_run[app_name] = True
