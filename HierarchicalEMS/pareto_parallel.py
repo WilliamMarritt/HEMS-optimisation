@@ -8,9 +8,9 @@ from house_agent import HouseAgent
 from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
-sigmas = [0.0, 0.1, 0.25, 0.5]
+sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
-# 1. Package the simulation into a standalone worker function
+# Package the simulation into a standalone worker function
 def run_single_simulation(params):
     alpha, sigma = params
     random.seed(42) 
@@ -27,29 +27,35 @@ def run_single_simulation(params):
 
     for step in range(48): 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
-        max_peak = max(max_peak, peak_demand)
 
-        for sched in approved_schedules:
-            import_kw = sched["planned_import_k0"]
-            cost = import_kw * price_grid_elec[step % total_steps] * delta 
-            total_community_cost += cost
+        step_actual_peak = 0.0
+        step_actual_cost = 0.0
+
+        for house in houses:
+            sched = next(s for s in approved_schedules if s["house_id"] == house.house_id)
+            house.execute_physical_action(sched, step)
+            true_import = house.history_E.get(("Grid_Import", step), 0.0)
+
+            step_actual_peak += true_import
+            step_actual_cost += true_import * price_grid_elec[step % total_steps] * delta
+
+        max_peak = max(max_peak, step_actual_peak)
+        total_community_cost += step_actual_cost
 
     print(f"Sweep Done -> Alpha: {alpha:<4} | Sigma: {sigma:<4} | Peak: {max_peak:>5.2f} kW | Cost: £{total_community_cost:.2f}")
     
     return {'alpha': alpha, 'sigma': sigma, 'cost': total_community_cost, 'peak': max_peak}
 
-# 2. The __main__ guard protects EVERYTHING in a normal terminal
+#  __main__ guard prevents child process does not recursively execute main process
 if __name__ == '__main__':
     print(f"Starting 2D Pareto Sweep on MULTIPLE CORES...")
     
     combinations = [(a, s) for a in alphas for s in sigmas]
     results = {sigma: {'alphas': [], 'costs': [], 'peaks': []} for sigma in sigmas}
 
-    # 3. Unleash the CPU! 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         sim_results = list(executor.map(run_single_simulation, combinations))
 
-    # 4. Unpack the parallel results
     for res in sim_results:
         results[res['sigma']]['alphas'].append(res['alpha'])
         results[res['sigma']]['costs'].append(res['cost'])
@@ -58,10 +64,10 @@ if __name__ == '__main__':
     print("\nData generated! Generating 2D Pareto Graphs...")
 
     # ==========================================
-    # PLOTTING (Now safely inside the guard!)
+    #                   PLOTTING
     # ==========================================
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] 
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#cc08b2"] 
 
     # Graph 1: Cost vs Alpha
     for i, sigma in enumerate(sigmas):

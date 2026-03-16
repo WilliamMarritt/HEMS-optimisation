@@ -58,7 +58,15 @@ class HouseAgent:
             app["T_S"] = new_ts
             app["T_F"] = new_tf
 
-          
+        # Pregenerate Randomness
+
+        self.rogue_spikes_timeline = [
+            random.choice([1.5, 2.5, 3.5]) if random.random() < 0.10 else 0.0
+            for _ in range(total_steps * 2)
+        ]  
+
+        self.noise = [random.uniform(0.00001, 0.00099) for _ in range(48)]
+
 
     def generate_proposed_schedule(self, current_step, community_penalty_prices):
         # Lower level solver
@@ -128,7 +136,7 @@ class HouseAgent:
             model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            reserve_hours = 0
+            reserve_hours = 0.5
             model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
 
             # Storage Dynamics
@@ -145,12 +153,7 @@ class HouseAgent:
 
         #Local Data Arrays for this specific prediction horizon
         # Rogue user interjection
-        rogue_power = 0.0
-
-        # 10% chance at any given time step that a human does something unpredictable
-        if random.random() < 0.10:
-            # Randomly choose a device
-            rogue_power = random.choice([1.5, 2.5, 3.5])
+        rogue_power = self.rogue_spikes_timeline[current_step]
         
         local_elec_demand[0] += rogue_power     
         local_heat_demand = [heat_demand_per_house[(current_step + k) % total_steps] for k in mpc_steps]
@@ -287,8 +290,7 @@ class HouseAgent:
         local_prices = [price_grid_elec[(current_step + k) % total_steps] for k in mpc_steps]
 
         # Generate a noise profile for this specific house
-        noise = [random.uniform(0.00001, 0.00099) for _ in mpc_steps]
-
+        noise = self.noise
 
         total_cost = pulp.lpSum([
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) + 
@@ -491,8 +493,8 @@ class HouseAgent:
                 excess_demand = (planned_import + rogue_spike) - dynamic_limit
                 available_inverter_capacity = D_E - planned_discharge
                 available_energy_kw = (self.current_soc * nu_E) / spike_duration if spike_duration > 0 else 0.0
-
-                emergency_discharge = min(excess_demand, available_inverter_capacity)
+                
+                emergency_discharge = min(excess_demand, available_inverter_capacity, available_energy_kw)
                 excess_demand -= emergency_discharge
 
                 if excess_demand > 0.01:
