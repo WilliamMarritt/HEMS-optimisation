@@ -13,7 +13,7 @@ sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 # Package the simulation into a standalone worker function
 def run_single_simulation(params):
     alpha, sigma = params
-    random.seed(42) 
+    random.seed(41) 
     
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]
     community = CommunityController(transformer_limit=I_max)

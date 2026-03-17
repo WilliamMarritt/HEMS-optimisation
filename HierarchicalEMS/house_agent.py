@@ -83,7 +83,7 @@ class HouseAgent:
             else:
                 human_start_hour = new_ts
             
-            app["human_start_hour"] = human_start_hour % total_steps
+            app["human_start_hour"] = human_start_hour % 24.0
             app["human_duration_hours"] = duration_hours
 
     def generate_proposed_schedule(self, current_step, community_penalty_prices):
@@ -128,13 +128,13 @@ class HouseAgent:
         O_flex = {}  # For Type 3: Binary On/Off State (for minimum power limits)
 
         E_deficit = {}
-        for app in appliances:
+        for app in self.personal_appliances:
             if app.get("power_type") == "flexible":
                 E_deficit[app["name"]] = pulp.LpVariable(f"Defecit_{app['name']}_H{self.house_id}", lowBound=0, cat="Continuous")
 
         Reserve_deficit = pulp.LpVariable.dicts(f"Reserve_deficit_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
 
-        for app in appliances:
+        for app in self.personal_appliances:
             name = app["name"]
             for k in mpc_steps:
                 if app["power_type"] == "constant":
@@ -181,7 +181,7 @@ class HouseAgent:
         flexible_load = {k: 0.0 for k in mpc_steps}
         locked_in_power = {k: 0.0 for k in mpc_steps}
 
-        for app in appliances:
+        for app in self.personal_appliances:
             name = app["name"]
             power_type = app["power_type"]
             interruptible = app.get("interruptible", False)
@@ -319,7 +319,7 @@ class HouseAgent:
             for k in mpc_steps
         ])
         
-        for app in appliances:
+        for app in self.personal_appliances:
             if app.get("power_type") == "flexible":
                 total_cost += 500 * E_deficit[app["name"]]
 
@@ -351,7 +351,7 @@ class HouseAgent:
             starting_appliances = []
             flexible_powers = {}
 
-            for app in appliances:
+            for app in self.personal_appliances:
                 name = app["name"]
                 power_type = app.get("power_type", "constant")
                 interruptible = app.get("interruptible", False)
@@ -395,7 +395,7 @@ class HouseAgent:
             non_optimal_profile = [0.0] *  horizon
 
 
-            for app in appliances:
+            for app in self.personal_appliances:
                 name = app["name"]
                 if not self.appliances_already_run[name]:
                     abs_start_limit = int(app["T_S"] * steps_per_hour)
@@ -406,11 +406,11 @@ class HouseAgent:
             current_demand = local_elec_demand[0]
             # Add power for appliances starting right now
             for name in starting_appliances:
-                app_info = next(a for a in appliances if a["name"] == name)
+                app_info = next(a for a in self.personal_appliances if a["name"] == name)
                 current_demand += app_info["Power"]
                 
             # Add power for appliances that are already running from previous steps
-            for app in appliances:
+            for app in self.personal_appliances:
                 name = app["name"]
                 duration = int(app["Slots"])
                 for past_k in range(1, duration):
@@ -441,7 +441,7 @@ class HouseAgent:
                 "freezer_compressor_k0": 0.3,
                 "rogue_power_k0": rogue_power,
                 "heat_pump_power_k0": local_heat_demand[0]/ COP,
-                "flexible_powers_k0": {app["name"]: 0.0 for app in appliances if app.get("power_type") == "flexible"},
+                "flexible_powers_k0": {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"},
             }
         
     def execute_physical_action(self, accepted_schedule, current_step):
@@ -579,8 +579,9 @@ class HouseAgent:
                 self.history_E[(name, current_step)] = avg_flex
 
                 # Update the delivered energy tracker so that the MPC knows it missed some charge
-                if current_step % total_steps == int(next(a["T_S"] for a in appliances if a["name"] == name) * steps_per_hour):
+                if current_step % total_steps == int(next(a["T_S"] for a in self.personal_appliances if a["name"] == name) * steps_per_hour):
                     self.flexible_energy_delivered[name] = 0.0
+                    
                 self.flexible_energy_delivered[name] += avg_flex * delta
             
             # Log standard appliances
