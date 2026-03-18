@@ -24,7 +24,7 @@ class HouseAgent:
         self.current_T_freezer = -18.0
 
         self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
-        self.sigma_human = 0.75                 # ~ 0.75 kW standard deviation
+        self.sigma_human = 0.75                # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
         self.daily_total_controlled_energy = 0.0
@@ -313,7 +313,6 @@ class HouseAgent:
         total_cost = pulp.lpSum([
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) + 
             (1000 * I_excess[k]) +      # penalty for going over 1kW
-            (50 * Reserve_deficit[k]) +       # penalty for an empty battery
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
             for k in mpc_steps
