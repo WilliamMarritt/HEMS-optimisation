@@ -113,7 +113,7 @@ def run_simulation():
     end_time = time.time()
 
     print("\n" + "="*40)
-    print("      TOTAL SIMULATION HOUSE ENERGY SUMMARY")
+    print("  TOTAL SIMULATION HOUSE ENERGY SUMMARY")
     print("="*40)
     for house in houses:
         # Find the absolute highest peak from the open loop vs closed loop
@@ -215,13 +215,7 @@ def run_simulation():
         appliance_data["Freezer"]['counts'][t] = 1 if freezer_power > 0 else 0
         appliance_data["Freezer"]['power'][t] = freezer_power
     
-        # fridge_count = 0
-        # for house in [houses[0]]:
-        #     if house.history_E.get(("Fridge", t), 0) == 1:
-        #         fridge_count += 1
-                
-        # appliance_data["Fridge"]['counts'][t] = fridge_count
-        # appliance_data["Fridge"]['power'][t] = fridge_count * 0.3 # 0.3 kW compressor power
+
 
     # Sort appliances for better visualisation (most used at the bottom)
     sorted_appliances = sorted(appliance_data.items(), key=lambda item: sum(item[1]['counts']), reverse=True) 
