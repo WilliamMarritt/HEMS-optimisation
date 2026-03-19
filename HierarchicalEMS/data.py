@@ -66,19 +66,24 @@ else:
 # Appliance Definitions
 # T_S: Earliest start, T_F: Latest finish, P: Duration (hours)
 appliances = [
-    {'name': 'Dish washer',       'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'P': 2,   'Slots': 4,  'Power': 1.0},
-    {'name': 'Washing machine',   'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 12, 'P': 1.5, 'Slots': 3,  'Power': 1.2},
-    {'name': 'Spin dryer',        'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 13, 'T_F': 18, 'P': 1,   'Slots': 2,  'Power': 2.5},
-    {'name': 'Vacuum cleaner',    'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'P': 0.5, 'Slots': 1,  'Power': 1.2},
-    {'name': 'Cooker hob',        'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 8,  'T_F': 9,  'P': 0.5, 'Slots': 1,  'Power': 3.0},
-    {'name': 'Cooker oven',       'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 19, 'P': 0.5, 'Slots': 1,  'Power': 5.0},
-    {'name': 'Microwave',         'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 8,  'T_F': 9,  'P': 0.5, 'Slots': 1,  'Power': 1.7},
-    {'name': 'Interior lighting', 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 6,   'Slots': 12, 'Power': 0.84},
-    {'name': 'Laptop',            'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 2,   'Slots': 4,  'Power': 0.1},
-    {'name': 'Desktop',           'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'P': 3,   'Slots': 6,  'Power': 0.3},
-    {'name': 'Electric car',      'deferrable': True,  'interruptible': True,  'power_type': "flexible", 'T_S': 18, 'T_F': 8, 'P': 3,    'Slots': 6, 'Min_Power': 1.4, 'Max_Power': 7.0, 'Required_Energy': 10.5}
+    # Wet Appliances
+    {'name': 'Dish washer',       'prob': 0.57, 'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'Slots': 4,  'Power': 1.0}, 
+    {'name': 'Washing machine',   'prob': 0.78, 'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 12, 'Slots': 3,  'Power': 1.2}, 
+    {'name': 'Spin dryer',        'prob': 0.71, 'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 13, 'T_F': 18, 'Slots': 2,  'Power': 2.0}, 
+
+    # Cleaning & Cooking 
+    {'name': 'Vacuum cleaner',    'prob': 0.28, 'deferrable': True,  'interruptible': False, 'power_type': "constant", 'T_S': 9,  'T_F': 17, 'Slots': 1,  'Power': 1.2}, 
+    {'name': 'Cooker hob',        'prob': 0.82, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 17, 'T_F': 19, 'Slots': 1,  'Power': 2.0}, 
+    {'name': 'Cooker oven',       'prob': 0.70, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 17, 'T_F': 19, 'Slots': 1,  'Power': 3.0}, 
+    {'name': 'Microwave',         'prob': 1.00, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 8,  'T_F': 9,  'Slots': 1,  'Power': 1.2}, 
+
+    # Lighting & Electronics 
+    {'name': 'Interior lighting', 'prob': 1.00, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 16, 'T_F': 24, 'Slots': 16, 'Power': 0.15}, 
+    {'name': 'Laptop',            'prob': 1.00, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'Slots': 4,  'Power': 0.05}, 
+    {'name': 'Desktop',           'prob': 0.50, 'deferrable': False, 'interruptible': False, 'power_type': "constant", 'T_S': 18, 'T_F': 24, 'Slots': 6,  'Power': 0.20}, 
+
+    # Flexible EV Load
+    {'name': 'Electric car',      'prob': 0.43, 'deferrable': True,  'interruptible': True,  'power_type': "flexible", 'T_S': 18, 'T_F': 8,  'Min_Power': 1.4, 'Max_Power': 7.0, 'Required_Energy': 13.5}
 ]
 
-# Calculate Slots (duration in steps) and extract names
-appliances = [{**item, 'Slots': item['P'] * steps_per_hour} for item in appliances]
 app_names = [a["name"] for a in appliances]

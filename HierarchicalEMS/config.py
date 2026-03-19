@@ -5,7 +5,7 @@
 # Community Settings
 num_homes = 5
 homes = range(num_homes)
-I_max = 10
+I_max = 8
 
 # Simulation Time Settings
 delta = 0.5

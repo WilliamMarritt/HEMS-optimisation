@@ -56,9 +56,38 @@ class HouseAgent:
 
         self.noise = [random.uniform(0.00001, 0.00099) for _ in range(48)]
 
-        # Appliance window variance and continuous-time stochastic allocation
-        self.personal_appliances = copy.deepcopy(appliances)
-        for app in self.personal_appliances:
+        self.randomise_daily_appliances()
+
+        
+
+    def randomise_daily_appliances(self):
+        # Generate a fresh schedule for each day
+        # Appliance window variance and continuous-time random allocation
+        # Decide which appliances run based on probability of occurence
+        new_daily_appliances = []
+
+        for app in copy.deepcopy(appliances):
+            name = app["name"]
+            is_mid_cycle = False
+
+            # Check if the EV is currently mid-charge from yesterday
+            if app.get("power_type") == "flexible":
+                delivered = self.flexible_energy_delivered.get(name, 0.0)
+                # If has some charge, it is mid cycle
+                is_mid_cycle = False
+
+            if app.get("power_type") == "constant":
+                duration_steps = int(app["Slots"])
+                for past_k in range(1, duration_steps + 1):
+                    past_t = total_steps - past_k
+                    if self.history_E.get((name, past_t), 0) == 1:
+                        is_mid_cycle = True
+                        break
+            
+            if not is_mid_cycle:
+                if "prob" in app and random.random() > app["prob"]:
+                    continue
+
             window_shift = random.uniform(-2.0, 2.0)
 
             # apply shift but keep within 0-24 bounds
@@ -86,6 +115,15 @@ class HouseAgent:
             app["human_start_hour"] = human_start_hour % 24.0
             app["human_duration_hours"] = duration_hours
 
+            new_daily_appliances.append(app)
+        
+        self.personal_appliances = new_daily_appliances
+
+        # reset the tracker for today's specific appliances
+        for app in self.personal_appliances:
+            if not self.history_E.get((app["name"], total_steps -1 ), 0) == 1:
+                self.appliances_already_run[app["name"]] = False
+
     def generate_proposed_schedule(self, current_step, community_penalty_prices):
         # Lower level solver
         # Runs a 24 hour look ahead MPC using PuLP to minimise the house's nill
@@ -93,6 +131,8 @@ class HouseAgent:
 
 
         if current_step > 0 and current_step % total_steps == 0:
+            self.randomise_daily_appliances()
+
             for app_name in self.appliances_already_run:
                 self.appliances_already_run[app_name]= False
 
@@ -155,8 +195,9 @@ class HouseAgent:
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
             reserve_hours = 0.5
-            # model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
-            model += S_E[k] + Reserve_deficit[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
+
+            target_soc = (safety_margin * reserve_hours) / nu_E
+            model += S_E[k] >= target_soc - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
 
 
             # Storage Dynamics
@@ -315,6 +356,7 @@ class HouseAgent:
         total_cost = pulp.lpSum([
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) + 
             (1000 * I_excess[k]) +      # penalty for going over 1kW
+            (1000 * Reserve_deficit[k]) +
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
             for k in mpc_steps
@@ -350,6 +392,8 @@ class HouseAgent:
             current_charge = pulp.value(z[0])
             current_discharge = pulp.value(y[0])
             next_soc = pulp.value(S_E[0])
+            if next_soc < terminal_target_soc:
+                print(f"House {self.house_id} [Step {current_step}]: MPC intentionally planned to drop SoC to {next_soc:.2f} kWh!")
 
             if current_discharge > 0 and community_penalty_prices[0] > 0:
                 reason = f"Discharging {current_discharge:.2f}kW to protect the grid import limit and avoid the penalty fee"

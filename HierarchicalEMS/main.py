@@ -237,6 +237,14 @@ def run_simulation():
         house_history = [h.history_E.get(("Grid_Import", step), 0.0) for step in range(total_steps*2)]
         all_houses_import.append(house_history)
 
+    test_step = 10 
+    sum_of_individual_imports = sum(house[test_step] for house in all_houses_import)
+    total_community_demand = history_actual_community_demand[test_step]
+
+    print(f"Sum of individual house imports: {sum_of_individual_imports} kW")
+    print(f"Net community transformer load: {total_community_demand} kW")
+
+
     plot_simulation_results(
         community_demand=history_community_demand,
         transformer_limit=I_max,
