@@ -24,7 +24,7 @@ class HouseAgent:
         self.current_T_freezer = -18.0
 
         self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
-        self.sigma_human = 0.75                 # ~ 0.75 kW standard deviation
+        self.sigma_human = 1.5                # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
         self.daily_total_controlled_energy = 0.0
@@ -137,7 +137,9 @@ class HouseAgent:
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
             reserve_hours = 0.5
-            model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
+            # model += S_E[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
+            model += S_E[k] + Reserve_deficit[k] >= (safety_margin * reserve_hours) / nu_E, f"Energy_Reserve_{k}"
+
 
             # Storage Dynamics
             if k == 0:
@@ -305,11 +307,22 @@ class HouseAgent:
             if app.get("power_type") == "flexible":
                 total_cost += 500 * E_deficit[app["name"]]
 
-        model += total_cost
+        # model += total_cost
 
-        # Force the battery to finish the 24 hour horizon with at least as much charge as it started with
-        model += S_E[horizon - 1] >= 0.10 * self.battery_capacity, "Terminal_SoC_Constraint"
-        model += S_TH[horizon - 1] >= 0.10 * C_TH, "Terminal_Thermal_Constraint"
+        # # Force the battery to finish the 24 hour horizon with at least as much charge as it started with
+        # model += S_E[horizon - 1] >= 0.10 * self.battery_capacity, "Terminal_SoC_Constraint"
+        # model += S_TH[horizon - 1] >= 0.10 * C_TH, "Terminal_Thermal_Constraint"
+
+        # Terminal Region
+        terminal_target_soc = (safety_margin * reserve_hours) / nu_E
+        model += S_E[horizon - 1] >= terminal_target_soc, "Terminal_Region_Lower_Bound"
+
+        terminal_target_therm = 0.25 * C_TH # Maintain minimum thermal comfort bounds
+        model += S_TH[horizon - 1] >= terminal_target_therm, "Terminal_Thermal_Region"
+        
+        # Average Agile off-peak rate is ~£0.15/kWh. 
+        terminal_value_rate = 0.15 
+        model += total_cost - (terminal_value_rate * S_E[horizon - 1])
 
         model.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=10))
 

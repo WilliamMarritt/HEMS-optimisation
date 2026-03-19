@@ -21,7 +21,7 @@ COP = 3.0       # Heat Pump coefficient of performance (possibly optimistic/ sun
 
 D_E = 10        # Maximum electrical discharge rate
 G_E = 10        # Maximum electrical charge rate
-S_init = 0.5*C_E
+S_init = 0.3*C_E
 
 nu_E = 0.95     # Electrical efficiency of ESS
 nu_TH = .098    # Thermal efficiency of ESS

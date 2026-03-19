@@ -232,9 +232,9 @@ def run_simulation():
         h0_heat_pump.append(hp_power)
 
 
-    print("\nAppliance Sort Order (by total time steps):")
-    for name, data in sorted_appliances:
-        print(f"  {name}: {sum(data['counts'])} steps")
+    # print("\nAppliance Sort Order (by total time steps):")
+    # for name, data in sorted_appliances:
+    #     print(f"  {name}: {sum(data['counts'])} steps")
     
     appliance_power_data = {name: data['power'] for name, data in sorted_appliances}
 
