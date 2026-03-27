@@ -9,6 +9,8 @@ from data import *
 import json
 import random
 
+
+
 def run_simulation():
     # locks the random shifting to a specific repeatable timeline
     random.seed(42)
@@ -28,7 +30,7 @@ def run_simulation():
     h0_discharge = []
     h0_charge = []
     h0_solar = []
-    h0_heat_demand = heat_demand_per_house*2
+    
 
  
     simulation_steps = 96
@@ -37,78 +39,56 @@ def run_simulation():
     start_time = time.time()
     
     for step in range(simulation_steps):
-        print(f"Time Step {step}")
+        vprint(f"Time Step {step}")
 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
-        # Calculate Feed-Foward Community Slack
+        # Calculate total community slack
         total_planned_import = sum(sched["planned_import_k0"] for sched in approved_schedules)
         global_slack = max(0.0, I_max - total_planned_import)
 
         for sched in approved_schedules:
             sched["community_slack_k0"] = global_slack
         
-        
-        step_physical_demand = 0.0
-        for house in houses:
-            # Base Load
-            h_demand = house.personal_elec_demand[step % total_steps]
-
-            h_demand += house.history_E.get(("Heat_Pump", step), 0.0)
-            h_demand += house.history_E.get(("Fridge", step), 0.0) * 0.3
-            h_demand += house.history_E.get(("Freezer", step), 0.0) * 0.3
-            h_demand += house.history_E.get(("Rogue_Load", step), 0.0)
-
-            # Scheduled Appliances
-            for app in appliances:
-                name = app["name"]
-                if app.get("power_type") == "flexible":
-                    h_demand += house.history_E.get((name, step), 0.0)
-                else:
-                    # Constant appliances running from previous steps
-                    duration = int(app["Slots"])
-                    for past_k in range(duration):
-                        past_t = step - past_k
-                        if past_t >= 0 and house.history_E.get((name, past_t), 0) == 1:
-                            h_demand += app["Power"]
-                            break
-
-        
-            step_physical_demand += h_demand
-        
-        # for total power demand plot
-        history_actual_community_demand.append(step_physical_demand)
-
-        history_community_demand.append(peak_demand)
-
         for house in houses:
             house_schedule = next((item for item in approved_schedules if item["house_id"] == house.house_id), None)
+            if house_schedule is not None:
+                house.execute_physical_action(house_schedule, step)
 
-            if house_schedule is None:
-                continue 
-    
-            house.execute_physical_action(house_schedule, step)
+        step_true_community_import = 0.0
+        step_open_community_demand = 0.0
+        
+        for house in houses:
+            net_import = house.history_E.get(("Grid_Import", step), 0.0)
+            solar_export = house.history_E.get(("Grid_Export", step), 0.0)
 
-            if house.house_id == 0:
-                apps = house_schedule.get("starting_appliances", [])
-                app_text = f"  | Starting Appliances: {apps}" if apps else ""
-                print(f"    House 0 Status: {house_schedule['explainability']} (Battery: {house.current_soc:.2f} kWh){app_text}")
+            step_true_community_import += (net_import - solar_export)
+            step_open_community_demand += house.history_E.get(("Open_Loop_Import", step), 0.0)
 
+        step_true_community_import = max(0.0, step_true_community_import)
+
+        history_community_demand.append(step_true_community_import)
+        history_actual_community_demand.append(step_open_community_demand)
+
+        # Log House 0 specific data for the detailed slides
         history_h0_soc.append(houses[0].current_soc)
         history_h0_soc_th.append(houses[0].current_soc_th)
-
         history_h0_fridge_temp.append(houses[0].current_T_fridge)
         history_h0_freezer_temp.append(houses[0].current_T_freezer)
         
-
         h0_solar.append(PV_capacity * solar_profile[step % total_steps])
+        
         h0_sched = next((item for item in approved_schedules if item["house_id"] == 0))
         h0_import.append(houses[0].history_E.get(("Grid_Import", step), 0.0))
         h0_discharge.append(houses[0].history_E.get(("Battery_Discharge", step), 0.0))
         h0_charge.append(h0_sched["planned_charge_k0"])
         
+        if houses[0].house_id == 0:
+            apps = h0_sched.get("starting_appliances", [])
+            app_text = f"  | Starting Appliances: {apps}" if apps else ""
+            vprint(f"    House 0 Status: {h0_sched['explainability']} (Battery: {houses[0].current_soc:.2f} kWh){app_text}")
 
         
-        print("-" * 25)
+        vprint("-" * 25)
 
     end_time = time.time()
 
@@ -120,19 +100,76 @@ def run_simulation():
         max_raw_peak = max([house.history_E[("Open_Loop_Import", s)] for s in range(simulation_steps)])
         max_controlled_peak = max([house.history_E.get(("Grid_Import", s), 0) for s in range(simulation_steps)])
         
-        print(f"House {house.house_id}:")
-        print(f"  Unsmart House (Open Loop):")
-        print(f"    - Grid Import Peak : {max_raw_peak:.2f} kW")
-        print(f"    - Total Energy Used (48h): {house.daily_total_uncontrolled_energy:.2f} kWh")
-        print(f"  Smart HEMS (Closed Loop):")
-        print(f"    - Grid Import Peak : {max_controlled_peak:.2f} kW")
-        print(f"    - Total Energy Used (48h): {house.daily_total_controlled_energy:.2f} kWh\n")
+        vprint(f"House {house.house_id}:")
+        vprint(f"  Unsmart House (Open Loop):")
+        vprint(f"    - Grid Import Peak : {max_raw_peak:.2f} kW")
+        vprint(f"    - Total Energy Used (48h): {house.daily_total_uncontrolled_energy:.2f} kWh")
+        vprint(f"  Smart HEMS (Closed Loop):")
+        vprint(f"    - Grid Import Peak : {max_controlled_peak:.2f} kW")
+        vprint(f"    - Total Energy Used (48h): {house.daily_total_controlled_energy:.2f} kWh\n")
+
+    uncontrolled_community_peak = max(history_actual_community_demand)
+    controlled_community_peak = max(history_community_demand)
 
     print("Simulation Complete")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    print(f"Maximum Community Peak Demand hit: {max(history_community_demand):.2f} kW")
+
+    print(f"Maximum Community Peak Demand hit: {controlled_community_peak:.2f} kW")
+    print(f"Uncontrolled Peak:  {uncontrolled_community_peak:.2f} kW")
     print(f"Power Draw Limit: {I_max} kW")
  
+    avg_uncontrolled_demand = sum(history_actual_community_demand) / simulation_steps
+    avg_controlled_demand = sum(history_community_demand) / simulation_steps
+    
+    uncontrolled_par = uncontrolled_community_peak / avg_uncontrolled_demand if avg_uncontrolled_demand > 0 else 0
+    controlled_par = controlled_community_peak / avg_controlled_demand if avg_controlled_demand > 0 else 0
+    
+    uncontrolled_breaches = sum(1 for d in history_actual_community_demand if d > I_max + 0.01)
+    controlled_breaches = sum(1 for d in history_community_demand if d > I_max + 0.01)
+
+    total_uncontrolled_cost = 0.0
+    total_controlled_cost = 0.0
+    total_controlled_export_kwh = 0.0
+
+    for step in range(simulation_steps):
+        price_in = price_grid_elec[step % total_steps]
+        price_out = price_grid_export[step % total_steps]
+        
+        step_dumb_import = sum(h.history_E.get(("Open_Loop_Import", step), 0.0) for h in houses)
+        step_smart_import = sum(h.history_E.get(("Grid_Import", step), 0.0) for h in houses)
+        step_smart_export = sum(h.history_E.get(("Grid_Export", step), 0.0) for h in houses)
+        
+        total_uncontrolled_cost += step_dumb_import * price_in * delta
+        total_controlled_cost += (step_smart_import * price_in * delta) - (step_smart_export * price_out * delta)
+        total_controlled_export_kwh += step_smart_export * delta
+
+    fridge_violations = sum(1 for t in history_h0_fridge_temp if t > 5.5)
+
+
+    print(f"{'\n\nPerformance Metric':<35} | {'Uncontrolled Grid':<11} | {'Smart Grid':<11}")
+    print("-" * 65)
+    print("Grid Stability")
+    print(f"  Absolute Peak Demand (kW)         | {uncontrolled_community_peak:<11.2f} | {controlled_community_peak:<11.2f}")
+    print(f"  Peak-to-Average Ratio (PAR)       | {uncontrolled_par:<11.2f} | {controlled_par:<11.2f}")
+    print(f"  Transformer Breaches (30m steps)  | {uncontrolled_breaches:<11} | {controlled_breaches:<11}")
+    print("-" * 65)
+    print("Community Economics")
+    print(f"  Total Energy Cost (£)             | £{total_uncontrolled_cost:<10.2f} | £{total_controlled_cost:<10.2f}")
+    if total_uncontrolled_cost > 0:
+        savings_pct = ((total_uncontrolled_cost - total_controlled_cost) / total_uncontrolled_cost) * 100
+        print(f"  Cost Savings (%)                  | {'---':<11} | {savings_pct:.1f}%")
+    print(f"  Peer-to-Peer Solar Export (kWh)   | {'0.00':<11} | {total_controlled_export_kwh:<11.2f}")
+    print("-" * 65)
+    print("User Comfort")
+    print(f"  H0 Fridge Violations (>5.5°C)     | {'0':<11} | {fridge_violations:<11}")
+
+    total_uncontrolled_kwh = sum(house.daily_total_uncontrolled_energy for house in houses)
+    total_controlled_kwh = sum(house.daily_total_controlled_energy for house in houses)
+
+    print(f"Dumb Grid (Uncontrolled) : {total_uncontrolled_kwh:.2f} kWh")
+    print(f"Smart Grid (Controlled)  : {total_controlled_kwh:.2f} kWh")
+
+
     if max(history_community_demand) <= I_max + 0.1:
         print("Success: the limit was protected")
     else:
@@ -237,12 +274,14 @@ def run_simulation():
         house_history = [h.history_E.get(("Grid_Import", step), 0.0) for step in range(total_steps*2)]
         all_houses_import.append(house_history)
 
-    test_step = 10 
+    test_step = 26
     sum_of_individual_imports = sum(house[test_step] for house in all_houses_import)
     total_community_demand = history_actual_community_demand[test_step]
+    sum_of_individual_exports = sum(house.history_E.get(("Grid_Export", test_step), 0.0) for house in houses)
 
-    print(f"Sum of individual house imports: {sum_of_individual_imports} kW")
-    print(f"Net community transformer load: {total_community_demand} kW")
+    # print(f"Sum of individual house imports: {sum_of_individual_imports} kW")
+    # print(f"Sum of individual house exports: {sum_of_individual_exports} kW")
+    # print(f"Net community transformer load: {total_community_demand} kW")
 
 
     plot_simulation_results(
@@ -260,7 +299,7 @@ def run_simulation():
         community_actual_demand=history_actual_community_demand,
         h0_heat_pump=h0_heat_pump,
         h0_thermal_storage=history_h0_soc_th,
-        h0_heat_demand=h0_heat_demand,
+        h0_indoor_temp=houses[0].history_T_in,  
         all_houses_import=all_houses_import        
     )
 

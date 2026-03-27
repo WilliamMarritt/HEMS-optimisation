@@ -9,15 +9,14 @@ from config import COP  # Import COP to calculate thermal output
 def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_prices, appliance_data,
                             h0_import=None, h0_discharge=None, h0_solar=None, h0_charge=None, 
                             h0_fridge_temp=None, h0_freezer_temp=None, community_actual_demand=None, 
-                            h0_heat_pump=None, h0_thermal_storage=None, h0_heat_demand=None,
-                            all_houses_import=None) :
+                            h0_heat_pump=None, h0_thermal_storage=None, all_houses_import=None, h0_indoor_temp=None) :
     
     steps = len(community_demand)
     time_axis_hours = np.arange(steps) / 2.0
     
     x_ticks = np.arange(0, max(time_axis_hours) + 3, 3)
 
-    fig = plt.figure(figsize=(20, 8))
+    fig = plt.figure(figsize=(18, 8))
     plt.subplots_adjust(bottom=0.2, right=0.80, hspace=0.35)
 
     # Subplots setup
@@ -111,27 +110,35 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     if h0_heat_pump is not None:
         hp_thermal_output = [p * COP for p in h0_heat_pump]
         
-        ax4.plot(time_axis_hours, hp_thermal_output, label=f"HP Thermal Output (COP {COP})", color='purple', linewidth=2)
-        ax4.fill_between(time_axis_hours, 0, hp_thermal_output, color='purple', alpha=0.3)
+        # Bottom axis (Power)
+        ax4.fill_between(time_axis_hours, 0, hp_thermal_output, color='purple', alpha=0.3, label=f"HP Thermal Output (COP {COP})")
+        ax4.plot(time_axis_hours, hp_thermal_output, color='purple', linewidth=2)
         
-        if h0_heat_demand is not None:
-            ax4.plot(time_axis_hours, h0_heat_demand, label="Heat Demand (kW)", color='black', linestyle='--', linewidth=2)
-
         ax4.set_ylabel("Thermal Power (kW)", fontweight='bold')
         ax4.set_xlabel("Time (Hours)", fontweight='bold')
-        ax4.set_title("Slide 4/5: House 0 Thermal Demand & Output", fontsize=14, fontweight='bold')
+        ax4.set_title("Slide 4/6: House 0 Thermodynamics & Storage", fontsize=14, fontweight='bold')
         ax4.grid(True, linestyle='--', alpha=0.5)
 
+        # Top axis (Temperatures and Tank)
+        ax4_temp = ax4.twinx()
+        
+        # Plot Indoor Temperature
+        if h0_indoor_temp is not None:
+            ax4_temp.plot(time_axis_hours, h0_indoor_temp, label="Indoor Temp ($^\circ$C)", color='crimson', linewidth=2.5)
+            # Add Comfort Bounds
+            ax4_temp.axhline(y=22.0, color='red', linestyle=':', linewidth=1.5, alpha=0.5, label="Max Temp")
+            ax4_temp.axhline(y=18.0, color='blue', linestyle=':', linewidth=1.5, alpha=0.5, label="Min Temp")
+        
+        # Plot Water Tank (if it exists)
         if h0_thermal_storage is not None:
-            ax4_thermal = ax4.twinx()
-            ax4_thermal.plot(time_axis_hours, h0_thermal_storage, label="Thermal Storage", color='teal', linewidth=2, linestyle='-')
-            ax4_thermal.set_ylabel("Thermal Storage Level (kWh)", color='teal', fontweight='bold')
+            ax4_temp.plot(time_axis_hours, h0_thermal_storage, label="Water Tank (kWh)", color='teal', linewidth=2, linestyle='--')
             
-            lines_4, labels_4 = ax4.get_legend_handles_labels()
-            lines_4t, labels_4t = ax4_thermal.get_legend_handles_labels()
-            ax4.legend(lines_4 + lines_4t, labels_4 + labels_4t, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
-        else:
-            ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+        ax4_temp.set_ylabel("Temperature ($^\circ$C) / Storage (kWh)", fontweight='bold')
+        
+        # Combine legends
+        lines_4, labels_4 = ax4.get_legend_handles_labels()
+        lines_4t, labels_4t = ax4_temp.get_legend_handles_labels()
+        ax4.legend(lines_4 + lines_4t, labels_4 + labels_4t, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 
     # SLIDE 5: Split Refrigeration Profiles
     has_fridge_power = "Fridge" in appliance_data
@@ -198,8 +205,8 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         slide1_axes.append(ax1_soc)
         
     slide4_axes = [ax4]
-    if h0_heat_pump is not None and h0_thermal_storage is not None:
-        slide4_axes.append(ax4_thermal)
+    if h0_heat_pump is not None:
+        slide4_axes.append(ax4_temp)
 
     slide5_axes = []
     if h0_fridge_temp is not None:

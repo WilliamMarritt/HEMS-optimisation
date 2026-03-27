@@ -19,6 +19,7 @@ class HouseAgent:
         self.current_soc_th = 0.25 * C_TH
         self.appliances_already_run = {app["name"]: False for app in appliances}
         self.history_E = {}
+        self.history_T_in = []
 
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
@@ -28,6 +29,7 @@ class HouseAgent:
 
         self.daily_total_uncontrolled_energy = 0.0
         self.daily_total_controlled_energy = 0.0
+        self.current_T_in = 20.0
     
         # Add randomness
         magnitude = random.uniform(0.7, 1.3)    # +/- 30% of total energy use
@@ -39,7 +41,6 @@ class HouseAgent:
             for i in range(total_len)
         ]
 
-        self.personal_heat_demand = heat_demand_per_house.copy()   
 
         self.flexible_energy_delivered = {}
         for app in appliances:
@@ -147,12 +148,22 @@ class HouseAgent:
         y = pulp.LpVariable.dicts(f"Discharge_Rate_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         I = pulp.LpVariable.dicts(f"Grid_Import_H{self.house_id}", mpc_steps, lowBound=0, upBound=I_max, cat='Continuous')
         I_excess = pulp.LpVariable.dicts(f"Excess_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='continuous')
+        I_export = pulp.LpVariable.dicts(f"Grid Export", mpc_steps, lowBound=0)
+        # binary state (1 = Importing, 0 = Exporting)
+        Z_grid = pulp.LpVariable.dicts(f"Grid_State_H{self.house_id}", mpc_steps, cat='Binary')
+
         P_HP = pulp.LpVariable.dicts(f"Heat_Pump_Power_H{self.house_id}", mpc_steps, lowBound=0, upBound=10.0, cat='Continuous')
+        P_HP_Space = pulp.LpVariable.dicts(f"HP_Space_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
+        P_HP_DHW = pulp.LpVariable.dicts(f"P_HP_DHW{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         S_TH = pulp.LpVariable.dicts(f"SoC_Therm_H{self.house_id}", mpc_steps, 0, C_TH, cat='Continuous')
+        T_in = pulp.LpVariable.dicts(f"T_house_H{self.house_id}", mpc_steps, lowBound=T_min, upBound=T_max, cat='Continuous')
+        diff = pulp.LpVariable.dicts(f"T_diff_H{self.house_id}", mpc_steps, lowBound=0)                 # Comfort deviation variable     
+
         T_fr = pulp.LpVariable.dicts(f"T_fridge_H{self.house_id}", mpc_steps, lowBound=2, upBound=5, cat='Continuous')
         T_fz = pulp.LpVariable.dicts(f"T_freezer_H{self.house_id}", mpc_steps, lowBound=-22.0, upBound=-15.0, cat='Continuous')
         P_comp_fr = pulp.LpVariable.dicts(f"Fridge_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
         P_comp_fz = pulp.LpVariable.dicts(f"Freezer_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
+        
 
         # Chance constraint setup
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
@@ -189,16 +200,18 @@ class HouseAgent:
             model += z[k] <= G_E, f"Charge_Limit{k}"
             model += I[k] <= self.house_limit +  I_excess[k], f"Dynamic_limit_{k}"
 
+            M = 20.0  # Safe physical wire limit in kW
+            model += I[k] <= M * Z_grid[k], f"Max_Import_State_{k}"
+            model += I_export[k] <= M * (1 - Z_grid[k]), f"Max_Export_State_{k}"
+
             # The sum of unused grid capacity + unused battery discharge + interruptible charging
             # must always be capable of absorbing the suddent chance-constraint spikes
             model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
 
             # The battery is forced to keep enough energy to survive a 30-minute spike
             reserve_hours = 0.5
-
             target_soc = (safety_margin * reserve_hours) / nu_E
             model += S_E[k] >= target_soc - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
-
 
             # Storage Dynamics
             if k == 0:
@@ -217,9 +230,9 @@ class HouseAgent:
         rogue_power = self.rogue_spikes_timeline[current_step]
         
         local_elec_demand[0] += rogue_power     
-        local_heat_demand = [heat_demand_per_house[(current_step + k) % total_steps] for k in mpc_steps]
+        
         solar_generation_per_house = [self.pv_capacity * multiplier for multiplier in solar_profile]
-        local_solar_gen = [solar_generation_per_house[(current_step + k) % total_steps] for k in mpc_steps]
+        local_solar_gen = [solar_generation_per_house[(current_step + k) % 48] for k in mpc_steps]
 
         flexible_load = {k: 0.0 for k in mpc_steps}
         locked_in_power = {k: 0.0 for k in mpc_steps}
@@ -327,61 +340,75 @@ class HouseAgent:
                     model += P_flex[(name, k)] >= min_p * O_flex[(name, k)], f"Min_{name}_{k}"
                     model += P_flex[(name, k)] <= max_p * O_flex[(name, k)], f"Max_{name}_{k}"
                     
-                    # Add directly to the flexible load (no locked-in history needed because it can be paused!)
+                    # Add directly to the flexible load (no locked-in history needed because it can be paused)
                     flexible_load[k] += P_flex[(name, k)]
 
                 model += pulp.lpSum(P_flex[(name, k)] * delta for k in current_session_k) >= req_energy - E_deficit[name], f"Energy_Req_Min_{name}"
                 model += pulp.lpSum(P_flex[(name, k)] * delta for k in current_session_k) <= req_energy, f"Energy_Req_Max_{name}"
         
+        local_T_out = [current_ambient_temp_profile[(current_step + k) % 48] for k in mpc_steps]
+
         for k in mpc_steps:
-            model += (local_elec_demand[k] + flexible_load[k] + locked_in_power[k] + P_HP[k] + z[k] + (0.3 * P_comp_fr[k]) + (0.3 * P_comp_fz[k]) <= I[k] + local_solar_gen[k] + y[k]), f"Power_balance_{k}"
+            model += (local_elec_demand[k] + flexible_load[k] + locked_in_power[k] + P_HP[k] + z[k] + (0.3 * P_comp_fr[k]) + (0.3 * P_comp_fz[k]) + I_export[k] == I[k] + local_solar_gen[k] + y[k]), f"Power_balance_{k}"
+            
+            model += P_HP_Space[k] + P_HP_DHW[k] == P_HP[k], f"HP_Split_{k}"
+
             if k == 0:
-                model += S_TH[0] == self.current_soc_th + (P_HP[0] * COP * delta) - (local_heat_demand[0] * delta), f"Therm_Balance_0"
                 model += T_fr[0] == self.current_T_fridge + (0.1196 * delta) - (((0.1467 + 0.1196) / 0.3) * delta * P_comp_fr[0])
                 model += T_fz[0] == self.current_T_freezer + ((15/67) * delta) - (((7/25) + (15/67)) / 0.3 * delta * P_comp_fz[0])
+                model += T_in[0] == self.current_T_in + (delta/C_in) * ((P_HP_Space[0] * COP) - (UA * (self.current_T_in - local_T_out[0])))
+                model += S_TH[0] == self.current_soc_th + (P_HP_DHW[0] * COP * delta)
 
             else: 
-                model += S_TH[k] == S_TH[k-1] + (P_HP[k] * COP * delta) - (local_heat_demand[k]*delta), f"Therm_Balance{k}"
                 model += T_fr[k] == T_fr[k-1] + (0.1196 * delta) - (((0.1467 + 0.1196) / 0.3) * delta * P_comp_fr[k])
                 model += T_fz[k] == T_fz[k-1] + ((15/67) * delta) - (((7/25) + (15/67)) / 0.3 * delta * P_comp_fz[k])
+                model += T_in[k] == T_in[k-1] + (delta/C_in) * ((P_HP_Space[k] * COP) - (UA * (T_in[k-1] - local_T_out[k])))
+                model += S_TH[k] == S_TH[k-1] + (P_HP_DHW[k] * COP * delta)
+
+            # Comfort Deviation Constraints
+            model += diff[k] >= T_in[k] - T_target
+            model += diff[k] >= T_target - T_in[k]
 
 
     
         # Objective Function
-        local_prices = [price_grid_elec[(current_step + k) % total_steps] for k in mpc_steps]
+        local_prices = [price_grid_elec[(current_step + k) % 48] for k in mpc_steps]
+        local_export_prices = [price_grid_export[(current_step + k) % 48] for k in mpc_steps]
 
         # Generate a noise profile for this specific house
         noise = self.noise
 
         total_cost = pulp.lpSum([
-            delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) + 
+            delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) -
+            delta * (I_export[k] * local_export_prices[k]) +  
             (1000 * I_excess[k]) +      # penalty for going over 1kW
-            (1000 * Reserve_deficit[k]) +
+            (5 * Reserve_deficit[k]) +
+            (0.5 * diff[k]) + 
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
             for k in mpc_steps
         ])
         
+
         for app in self.personal_appliances:
             if app.get("power_type") == "flexible":
                 total_cost += 500 * E_deficit[app["name"]]
 
-        # model += total_cost
 
-        # # Force the battery to finish the 24 hour horizon with at least as much charge as it started with
-        # model += S_E[horizon - 1] >= 0.10 * self.battery_capacity, "Terminal_SoC_Constraint"
-        # model += S_TH[horizon - 1] >= 0.10 * C_TH, "Terminal_Thermal_Constraint"
+        terminal_value_rate = 0.15
+        final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1])       
+        model += final_objective 
 
+    
         # Terminal Region
         terminal_target_soc = (safety_margin * reserve_hours) / nu_E
         model += S_E[horizon - 1] >= terminal_target_soc, "Terminal_Region_Lower_Bound"
-
-        terminal_target_therm = 0.25 * C_TH # Maintain minimum thermal comfort bounds
-        model += S_TH[horizon - 1] >= terminal_target_therm, "Terminal_Thermal_Region"
         
-        # Average Agile off-peak rate is ~£0.15/kWh. 
-        terminal_value_rate = 0.15 
-        model += total_cost - (terminal_value_rate * S_E[horizon - 1])
+        model += T_in[horizon - 1] >= T_min, "Terminal_Thermal_Region"
+
+        terminal_target_therm = 0.25 * C_TH
+        model += S_TH[horizon - 1] >= terminal_target_therm, "Terminal_Tank_Reserve"
+        
 
         model.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=10))
 
@@ -391,9 +418,10 @@ class HouseAgent:
             current_import = pulp.value(I[0])
             current_charge = pulp.value(z[0])
             current_discharge = pulp.value(y[0])
+            current_export = pulp.value(I_export[0])
             next_soc = pulp.value(S_E[0])
             if next_soc < terminal_target_soc:
-                print(f"House {self.house_id} [Step {current_step}]: MPC intentionally planned to drop SoC to {next_soc:.2f} kWh!")
+                vprint(f"House {self.house_id} [Step {current_step}]: MPC intentionally planned to drop SoC to {next_soc:.2f} kWh")
 
             if current_discharge > 0 and community_penalty_prices[0] > 0:
                 reason = f"Discharging {current_discharge:.2f}kW to protect the grid import limit and avoid the penalty fee"
@@ -428,9 +456,10 @@ class HouseAgent:
                 "planned_import_k0": current_import,
                 "planned_charge_k0": current_charge,
                 "planned_discharge_k0": current_discharge,
+                "planned_export_k0": current_export,
                 "next_soc_calculation": next_soc,
                 "explainability": reason,
-                "next_soc_th_calculation": pulp.value(S_TH[0]),
+                # "next_soc_th_calculation": pulp.value(S_TH[0]),
                 "starting_appliances": starting_appliances,
                 "next_T_fridge": pulp.value(T_fr[0]),
                 "next_T_freezer": pulp.value(T_fz[0]),
@@ -440,6 +469,7 @@ class HouseAgent:
                 "rogue_power_k0": rogue_power,
                 "heat_pump_power_k0": pulp.value(P_HP[0]),
                 "flexible_powers_k0": flexible_powers,
+                "next_T_in_calculation": pulp.value(T_in[0])
 
 
             }
@@ -468,7 +498,7 @@ class HouseAgent:
             # Add power for appliances that are already running from previous steps
             for app in self.personal_appliances:
                 name = app["name"]
-                duration = int(app["Slots"])
+                duration = int(app["duration"])
                 for past_k in range(1, duration):
                     past_t = current_step - past_k
                     if past_t >= 0 and self.history_E.get((name, past_t), 0) == 1:
@@ -487,6 +517,7 @@ class HouseAgent:
                 "planned_import_k0": current_import,
                 "planned_charge_k0": 0.0,
                 "planned_discharge_k0": 0.0,
+                "planned_export_k0": 0.0,
                 "next_soc_calculation": self.current_soc,  # Battery sits idle
                 "explainability": "OPTIMISATION FAILED: Reverting to Dumb House mode",
                 "next_soc_th_calculation": self.current_soc_th,
@@ -498,6 +529,7 @@ class HouseAgent:
                 "rogue_power_k0": rogue_power,
                 "heat_pump_power_k0": local_heat_demand[0]/ COP,
                 "flexible_powers_k0": {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"},
+                "next_T_in_calculation": 20.0
             }
         
     def execute_physical_action(self, accepted_schedule, current_step):
@@ -512,9 +544,14 @@ class HouseAgent:
         # Dumb Fridge & Freezer: Steady-state compressor draw to maintain temp, ~0.135kW each
         # Dumb Appliances (They turn on exactly at their preferred start window)
 
-        open_loop_demand += self.personal_heat_demand[abs_t] / COP
-        open_loop_demand += 0.27 
-        
+        # If the house is colder than the target, turn the Heat Pump on
+        if self.current_T_in < T_target:
+            dumb_hp_elec_power = 3.0 
+        else:
+            dumb_hp_elec_power = 0.0
+       
+
+        open_loop_demand += dumb_hp_elec_power
         step_start_hour = (current_step % total_steps) * delta
         step_end_hour = step_start_hour + delta
 
@@ -562,6 +599,8 @@ class HouseAgent:
         self.history_E[("Open_Loop_Import", current_step)] = open_loop_import
         self.daily_total_uncontrolled_energy += open_loop_import * delta
 
+        self.current_T_in = accepted_schedule.get("next_T_in_calculation", self.current_T_in)
+        self.history_T_in.append(self.current_T_in)
 
         if accepted_schedule["status"] == "Optimal":
 
@@ -569,6 +608,7 @@ class HouseAgent:
             # Read MPC's original plan
             planned_discharge = accepted_schedule["planned_discharge_k0"]
             planned_import = accepted_schedule["planned_import_k0"]
+            planned_export = accepted_schedule.get("planned_export_k0", 0.0)
             community_slack = accepted_schedule.get("community_slack_k0", 0.0)
             dynamic_limit = self.house_limit + community_slack
 
@@ -645,9 +685,15 @@ class HouseAgent:
             self.history_E[("Freezer", current_step)] = accepted_schedule["freezer_compressor_k0"]
             
             # True Grid Import Average
+            avg_net = planned_import - planned_export + avg_rogue - (emergency_discharge * spike_duration / delta)
+
+            true_import = max(0.0, avg_net)
+            true_export = max(0.0, -avg_net)
+
             avg_import = planned_import + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
-            self.history_E[("Grid_Import", current_step)] = max(0.0, avg_import)
-            self.daily_total_controlled_energy += max(0.0, avg_import) * delta
+            self.history_E[("Grid_Import", current_step)] = true_import
+            self.history_E[("Grid_Export", current_step)] = true_export
+            self.daily_total_controlled_energy += true_import*delta
 
 
             started_apps = accepted_schedule.get("starting_appliances", [])

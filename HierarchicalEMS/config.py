@@ -1,11 +1,16 @@
 # Contains constants and system parameters
 
 # config.py
+verbose = False
+
+def vprint(*args, **kwargs):
+    if verbose:
+        print(*args, **kwargs)
 
 # Community Settings
 num_homes = 5
 homes = range(num_homes)
-I_max = 8
+I_max = 10
 
 # Simulation Time Settings
 delta = 0.5
@@ -33,4 +38,12 @@ PV_capacity = 1.0
 # Cost Parameters
 wear_cost_elec = 0.005
 wear_cost_therm = 0.001
+
+# Thermal Parameters
+UA = 0.085      # Heat transfer coefficient
+C_in = 2.5
+T_target = 20.0
+T_min = 18.0
+T_max = 22.0
+
 

@@ -45,26 +45,27 @@ class CommunityController:
                     breach_detected = True
 
                     breach_amount = total_community_demand[k] - self.limit
-                    current_penalties[k] += (breach_amount * 0.2)
-            final_approved_data = house_data_packages
+                    current_penalties[k] += (breach_amount * 1.0)
 
             if not breach_detected:
                 agreed = True
                 final_approved_data = house_data_packages
-                print(f"    [Step {current_step}] Schedules Approved in {iteration} iterations. Peak Demand: {max(total_community_demand):.2f} kW")
+                vprint(f"    [Step {current_step}] Schedules Approved in {iteration} iterations. Peak Demand: {max(total_community_demand):.2f} kW")
         
         if not agreed:        
+            final_approved_data = house_data_packages
+
             worst_k = total_community_demand.index(max(total_community_demand))
             worst_demand = total_community_demand[worst_k]
 
-            print(f"    [Step {current_step}] WARNING: Max iterations reached. Accepting schedule with breaches.")
-            print(f"      -> Worst breach occurs looking ahead {worst_k} steps.")
-            print(f"      -> Demand: {worst_demand:.2f} kW (Limit: {self.limit} kW)")
+            vprint(f"    [Step {current_step}] WARNING: Max iterations reached. Accepting schedule with breaches.")
+            vprint(f"      -> Worst breach occurs looking ahead {worst_k} steps.")
+            vprint(f"      -> Demand: {worst_demand:.2f} kW (Limit: {self.limit} kW)")
             
             # Print exactly what each house is doing at that specific problem step
             house_loads = [profiles[worst_k] for profiles in proposed_profiles]
             max_power = I_max/num_homes
             breakdown = " | ".join([f"H{i}: {load:.2f}kW" for i, load in enumerate(house_loads) if load > max_power])            
-            print(f"      -> Culprits: {breakdown}")
+            vprint(f"      -> Culprits: {breakdown}")
 
         return final_approved_data, total_community_demand[0]
