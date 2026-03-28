@@ -1,7 +1,7 @@
 # Contains constants and system parameters
 
 # config.py
-verbose = False
+verbose = True
 
 def vprint(*args, **kwargs):
     if verbose:
@@ -31,9 +31,7 @@ S_init = 0.3*C_E
 nu_E = 0.95     # Electrical efficiency of ESS
 nu_TH = .098    # Thermal efficiency of ESS
 
-xi_CHP = 0.5445
-
-PV_capacity = 1.0
+PV_capacity = 5.0
 
 # Cost Parameters
 wear_cost_elec = 0.005

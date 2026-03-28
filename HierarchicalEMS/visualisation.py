@@ -93,6 +93,10 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     colors = cm.tab20.colors
     bottom_arr = np.zeros(steps)
     
+    if h0_heat_pump is not None and sum(h0_heat_pump) > 0:
+        ax3.bar(time_axis_hours, h0_heat_pump, bottom=bottom_arr, width=0.5, label="Heat Pump", alpha=0.8, align="edge", color="purple")
+        bottom_arr += np.array(h0_heat_pump)
+
     for i, (name, power_series) in enumerate(appliance_data.items()):
         if sum(power_series) > 0: 
             ax3.bar(time_axis_hours, power_series, bottom=bottom_arr, width=0.5, label=name, alpha=0.8, align='edge', color=colors[i % 20])

@@ -231,7 +231,7 @@ class HouseAgent:
         
         local_elec_demand[0] += rogue_power     
         
-        solar_generation_per_house = [self.pv_capacity * multiplier for multiplier in solar_profile]
+        solar_generation_per_house = [self.pv_capacity * efficiency * multiplier for multiplier in solar_profile]
         local_solar_gen = [solar_generation_per_house[(current_step + k) % 48] for k in mpc_steps]
 
         flexible_load = {k: 0.0 for k in mpc_steps}
@@ -490,6 +490,15 @@ class HouseAgent:
                         starting_appliances.append(name)
 
             current_demand = local_elec_demand[0]
+
+            # Revert to bang-bang control for thermostat
+            if self.current_T_in < T_target:
+                dumb_hp_power = 3.0
+            else:
+                dumb_hp_power = 0.0
+                
+            current_demand += dumb_hp_power
+
             # Add power for appliances starting right now
             for name in starting_appliances:
                 app_info = next(a for a in self.personal_appliances if a["name"] == name)
@@ -498,7 +507,7 @@ class HouseAgent:
             # Add power for appliances that are already running from previous steps
             for app in self.personal_appliances:
                 name = app["name"]
-                duration = int(app["duration"])
+                duration = int(app["human_duration_hours"])
                 for past_k in range(1, duration):
                     past_t = current_step - past_k
                     if past_t >= 0 and self.history_E.get((name, past_t), 0) == 1:
@@ -527,7 +536,7 @@ class HouseAgent:
                 "fridge_compressor_k0": 0.3,
                 "freezer_compressor_k0": 0.3,
                 "rogue_power_k0": rogue_power,
-                "heat_pump_power_k0": local_heat_demand[0]/ COP,
+                "heat_pump_power_k0": dumb_hp_power,
                 "flexible_powers_k0": {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"},
                 "next_T_in_calculation": 20.0
             }
@@ -700,7 +709,24 @@ class HouseAgent:
             for app_name in started_apps:
                 self.appliances_already_run[app_name] = True
                 self.history_E[(app_name, current_step)] = 1
-                
+
+        else:
+            fallback_import = accepted_schedule["planned_import_k0"]
+            
+            # Log the grid import so pareto_parallel doesn't crash
+            self.history_E[("Grid_Import", current_step)] = fallback_import
+            self.history_E[("Grid_Export", current_step)] = 0.0
+            self.daily_total_controlled_energy += fallback_import * delta
+            
+            # Log the fallback assets
+            self.history_E[("Heat_Pump", current_step)] = accepted_schedule.get("heat_pump_power_k0", 0.0)
+            self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
+            self.history_E[("Battery_Discharge", current_step)] = 0.0
+            
+            started_apps = accepted_schedule.get("starting_appliances", [])
+            for app_name in started_apps:
+                self.appliances_already_run[app_name] = True
+                self.history_E[(app_name, current_step)] = 1        
                 
         
 
