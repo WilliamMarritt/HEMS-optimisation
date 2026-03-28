@@ -8,9 +8,9 @@ def vprint(*args, **kwargs):
         print(*args, **kwargs)
 
 # Community Settings
-num_homes = 5
+num_homes = 50
 homes = range(num_homes)
-I_max = 10
+I_max = 50
 
 # Simulation Time Settings
 delta = 0.5
