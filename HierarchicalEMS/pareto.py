@@ -80,7 +80,7 @@ for alpha in alphas:
         # s_key used to not overwrite sigma
         for s_key, data in results.items():
             for a, c, p in zip(data['alphas'], data['costs'], data['peaks']):
-                flat_data.append([sigma, a, c, p])
+                flat_data.append([s_key, a, c, p])
 
         df = pd.DataFrame(flat_data, columns=['Sigma', 'Alpha', 'Cost', 'Peak'])
 

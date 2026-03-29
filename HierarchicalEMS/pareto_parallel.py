@@ -3,6 +3,7 @@ import random
 import concurrent.futures
 import matplotlib.pyplot as plt
 import pandas as pd
+import os
 from config import *
 from data import *
 from house_agent import HouseAgent
@@ -10,12 +11,11 @@ from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
-num_simulations = 20  # Number of seeds per combination
+num_simulations = 20
 
-# Package the simulation into a standalone worker function
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
-    random.seed(seed_val) 
+    np.random.seed(seed_val) 
     
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]
     community = CommunityController(transformer_limit=I_max)
@@ -47,27 +47,33 @@ def run_single_simulation(params):
     return {'Sigma': sigma, 'Alpha': alpha, 'Seed': seed_val, 'Cost': total_community_cost, 'Peak': max_peak}
 
 
-# __main__ guard prevents child process recursively executing main process
 if __name__ == '__main__':
-    print(f"Starting 2D Pareto Sweep on MULTIPLE CORES...")
+    csv_file = 'pareto_results_parallel.csv'
+    completed_runs = set()
+
+    if os.path.exists(csv_file):
+        try:
+            existing_df = pd.read_csv(csv_file)
+            completed_runs = set(zip(existing_df['Alpha'], existing_df['Sigma'], existing_df['Seed'].astype(int)))
+        except Exception:
+            pass
+    else:
+        pd.DataFrame(columns=['Sigma', 'Alpha', 'Seed', 'Cost', 'Peak']).to_csv(csv_file, index=False)
+
+    all_combinations = [(round(a, 4), round(s, 4), seed) for a in alphas for s in sigmas for seed in range(num_simulations)]
+    combinations = [c for c in all_combinations if c not in completed_runs]
     
-    # Create a list of all 500 tasks (25 combos * 20 seeds)
-    combinations = [(a, s, seed) for a in alphas for s in sigmas for seed in range(num_simulations)]
-    
-    flat_data = []
+    print(f"Resuming... {len(completed_runs)} completed, {len(combinations)} remaining.")
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        # Submit all tasks to the queue
         futures = {executor.submit(run_single_simulation, combo): combo for combo in combinations}
         
         for future in concurrent.futures.as_completed(futures):
             try:
                 res = future.result()
-                flat_data.append(res)
                 
-                # Overwrite the CSV continuously
-                df = pd.DataFrame(flat_data)
-                df.to_csv('pareto_results_parallel.csv', index=False)
+                # Append single row to CSV immediately
+                pd.DataFrame([res]).to_csv(csv_file, mode='a', header=False, index=False)
                 
                 print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak']:>5.2f} kW | Cost: £{res['Cost']:.2f}")
             except Exception as exc:
@@ -75,23 +81,20 @@ if __name__ == '__main__':
 
     print("\nAll simulations finished! Averaging data for 2D Pareto Graphs...")
 
-    # Load the raw data and average the seeds together for plotting
-    final_df = pd.read_csv('pareto_results_parallel.csv')
+    final_df = pd.read_csv(csv_file)
     avg_df = final_df.groupby(['Sigma', 'Alpha']).mean().reset_index()
 
     results = {sigma: {'alphas': [], 'costs': [], 'peaks': []} for sigma in sigmas}
     
     for _, row in avg_df.iterrows():
         s = row['Sigma']
-        results[s]['alphas'].append(row['Alpha'])
-        results[s]['costs'].append(row['Cost'])
-        results[s]['peaks'].append(row['Peak'])
+        results[s]['alphas'].append(row['Alpha']).round(4),
+        results[s]['costs'].append(row['Cost']).round(4),
+        results[s]['peaks'].append(row['Peak']).astype(int)
         
-    
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#cc08b2"] 
 
-    # Graph 1: Cost vs Alpha
     for i, sigma in enumerate(sigmas):
         axes[0].plot(results[sigma]['alphas'], results[sigma]['costs'], marker='o', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
     axes[0].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
@@ -101,7 +104,6 @@ if __name__ == '__main__':
     axes[0].legend()
     axes[0].invert_xaxis()
 
-    # Graph 2: Peak Demand vs Alpha
     for i, sigma in enumerate(sigmas):
         axes[1].plot(results[sigma]['alphas'], results[sigma]['peaks'], marker='s', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
     axes[1].axhline(y=I_max, color='r', linestyle='--', linewidth=2, label=f'Transformer Limit ({I_max}kW)')
@@ -112,7 +114,6 @@ if __name__ == '__main__':
     axes[1].legend()
     axes[1].invert_xaxis()
 
-    # Graph 3: The True Pareto Frontier (Cost vs Peak)
     for i, sigma in enumerate(sigmas):
         axes[2].plot(results[sigma]['costs'], results[sigma]['peaks'], marker='^', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
     axes[2].axhline(y=I_max, color='r', linestyle='--', linewidth=2, label=f'Transformer Limit ({I_max}kW)')
