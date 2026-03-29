@@ -13,7 +13,7 @@ import pandas as pd
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50] # 0.01 = Highly Paranoid, 0.50 = Ignores risk completely
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]          # Size of the expected human spikes
-num_simulations = 1
+num_simulations = 20
 
 results = {sigma: {'alphas': [], 'costs': [], 'peaks': []} for sigma in sigmas}
 
@@ -58,15 +58,18 @@ for alpha in alphas:
 
                 sim_max_peak = max(max_peak, step_actual_peak)
                 sim_total_cost += step_actual_cost
+
             accumulated_peak += sim_max_peak
             accumulated_cost += sim_total_cost
 
+            
+            print(f"    -> Seed {sim} finished for a={alpha}, s={sigma}")
 
+        flat_data = []
+            
+        
         avg_peak = accumulated_peak / num_simulations
-        avg_cost = accumulated_cost / num_simulations
-
-
-          
+        avg_cost = accumulated_cost / num_simulations       
 
         print(f"Sweep Done -> Alpha: {alpha:<4} | Sigma: {sigma:<4} | Peak: {avg_peak:>5.2f} kW | Cost: £{avg_cost:.2f}")
 
@@ -74,6 +77,15 @@ for alpha in alphas:
         results[sigma]['costs'].append(avg_cost)
         results[sigma]['peaks'].append(avg_peak)
 
+        # s_key used to not overwrite sigma
+        for s_key, data in results.items():
+            for a, c, p in zip(data['alphas'], data['costs'], data['peaks']):
+                flat_data.append([sigma, a, c, p])
+
+        df = pd.DataFrame(flat_data, columns=['Sigma', 'Alpha', 'Cost', 'Peak'])
+
+        df.to_csv('pareto_results_laptop1.csv', index=False)
+        print("Data successfully saved to CSV")
 
 
 #%%
@@ -115,12 +127,3 @@ plt.show()
 
 # %%
 
-flat_data = []
-for sigma, data in results.items():
-    for a, c, p in zip(data['alphas'], data['costs'], data['peaks']):
-        flat_data.append([sigma, a, c, p])
-
-df = pd.DataFrame(flat_data, columns=['Sigma', 'Alpha', 'Cost', 'Peak'])
-
-df.to_csv('pareto_results_laptop1.csv', index=False)
-print("Data successfully saved to CSV!")

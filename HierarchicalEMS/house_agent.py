@@ -540,7 +540,9 @@ class HouseAgent:
                 "flexible_powers_k0": {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"},
                 "next_T_in_calculation": 20.0
             }
+        # Empty RAM
         del model
+
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
 
