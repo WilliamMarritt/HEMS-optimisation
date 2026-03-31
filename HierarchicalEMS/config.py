@@ -1,16 +1,16 @@
 # Contains constants and system parameters
 
 # config.py
-verbose = False
+verbose = True
 
 def vprint(*args, **kwargs):
     if verbose:
         print(*args, **kwargs)
 
 # Community Settings
-num_homes = 10
+num_homes = 5
 homes = range(num_homes)
-I_max = 10
+I_max = 7.5
 
 # Simulation Time Settings
 delta = 0.5

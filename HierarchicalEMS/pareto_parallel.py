@@ -11,7 +11,7 @@ from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
-num_simulations = 20
+num_simulations = 1
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -48,7 +48,7 @@ def run_single_simulation(params):
 
 
 if __name__ == '__main__':
-    csv_file = 'pareto_results_parallel.csv'
+    csv_file = 'pareto_results_parallel2.csv'
     completed_runs = set()
 
     if os.path.exists(csv_file):
@@ -88,10 +88,9 @@ if __name__ == '__main__':
     
     for _, row in avg_df.iterrows():
         s = row['Sigma']
-        results[s]['alphas'].append(row['Alpha']).round(4),
-        results[s]['costs'].append(row['Cost']).round(4),
-        results[s]['peaks'].append(row['Peak']).astype(int)
-        
+        results[s]['alphas'].append(round(row['Alpha'], 4)),
+        results[s]['costs'].append(round(row['Cost'], 4)),
+        results[s]['peaks'].append(int(row['Peak']))        
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#cc08b2"] 
 

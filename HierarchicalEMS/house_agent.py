@@ -198,7 +198,7 @@ class HouseAgent:
         for k in mpc_steps:
             model += y[k] <= D_E, f"Discharge_Rate_Limit{k}"
             model += z[k] <= G_E, f"Charge_Limit{k}"
-            model += I[k] <= self.house_limit +  I_excess[k], f"Dynamic_limit_{k}"
+            model += I[k] <= effective_limit +  I_excess[k], f"Dynamic_limit_{k}"
 
             M = 20.0  # Safe physical wire limit in kW
             model += I[k] <= M * Z_grid[k], f"Max_Import_State_{k}"
@@ -382,7 +382,7 @@ class HouseAgent:
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) -
             delta * (I_export[k] * local_export_prices[k]) +  
             (1000 * I_excess[k]) +      # penalty for going over 1kW
-            (5 * Reserve_deficit[k]) +
+            (200 * Reserve_deficit[k]) +
             (0.5 * diff[k]) + 
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
@@ -459,7 +459,7 @@ class HouseAgent:
                 "planned_export_k0": current_export,
                 "next_soc_calculation": next_soc,
                 "explainability": reason,
-                # "next_soc_th_calculation": pulp.value(S_TH[0]),
+                "next_soc_th_calculation": pulp.value(S_TH[0]),
                 "starting_appliances": starting_appliances,
                 "next_T_fridge": pulp.value(T_fr[0]),
                 "next_T_freezer": pulp.value(T_fz[0]),
@@ -541,7 +541,6 @@ class HouseAgent:
                 "next_T_in_calculation": 20.0
             }
         # Empty RAM
-        del model
 
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
