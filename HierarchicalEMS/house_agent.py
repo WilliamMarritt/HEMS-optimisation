@@ -24,8 +24,8 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
-        self.sigma_human = 1.5                # ~ 0.75 kW standard deviation
+        self.alpha = 0.15                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
         self.daily_total_controlled_energy = 0.0
@@ -229,7 +229,7 @@ class HouseAgent:
         # Rogue user interjection
         rogue_power = self.rogue_spikes_timeline[current_step]
         
-        local_elec_demand[0] += rogue_power     
+        # local_elec_demand[0] += rogue_power     # This is now handled as an unforeseen spike in the RTAS stage
         
         solar_generation_per_house = [self.pv_capacity * efficiency * multiplier for multiplier in solar_profile]
         local_solar_gen = [solar_generation_per_house[(current_step + k) % 48] for k in mpc_steps]

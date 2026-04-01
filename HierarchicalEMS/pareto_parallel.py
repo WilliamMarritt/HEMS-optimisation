@@ -11,11 +11,12 @@ from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
-num_simulations = 1
+num_simulations = 20
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
     np.random.seed(seed_val) 
+    random.seed(seed_val)
     
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]
     community = CommunityController(transformer_limit=I_max)
@@ -48,7 +49,7 @@ def run_single_simulation(params):
 
 
 if __name__ == '__main__':
-    csv_file = 'pareto_results_parallel2.csv'
+    csv_file = 'pareto_results_parallel_20sim_10kW_5house.csv'
     completed_runs = set()
 
     if os.path.exists(csv_file):
