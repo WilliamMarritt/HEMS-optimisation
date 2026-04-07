@@ -49,7 +49,7 @@ def run_single_simulation(params):
 
 
 if __name__ == '__main__':
-    csv_file = 'pareto_results_parallel_20sim_10kW_5house.csv'
+    csv_file = 'test.csv'
     completed_runs = set()
 
     if os.path.exists(csv_file):

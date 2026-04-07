@@ -75,7 +75,7 @@ def run_simulation():
         history_h0_fridge_temp.append(houses[0].current_T_fridge)
         history_h0_freezer_temp.append(houses[0].current_T_freezer)
         
-        h0_solar.append(PV_capacity * solar_profile[step % total_steps])
+        h0_solar.append(PV_capacity * efficiency* solar_profile[step % total_steps])
         
         h0_sched = next((item for item in approved_schedules if item["house_id"] == 0))
         h0_import.append(houses[0].history_E.get(("Grid_Import", step), 0.0))

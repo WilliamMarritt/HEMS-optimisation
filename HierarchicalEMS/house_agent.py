@@ -55,7 +55,7 @@ class HouseAgent:
             for _ in range(total_steps * 2)
         ]    
 
-        self.noise = [random.uniform(0.00001, 0.00099) for _ in range(48)]
+        self.noise = [random.uniform(-0.05, 0.05) for _ in range(48)]
 
         self.randomise_daily_appliances()
 
@@ -75,7 +75,7 @@ class HouseAgent:
             if app.get("power_type") == "flexible":
                 delivered = self.flexible_energy_delivered.get(name, 0.0)
                 # If has some charge, it is mid cycle
-                is_mid_cycle = False
+                is_mid_cycle = delivered > 0.0
 
             if app.get("power_type") == "constant":
                 duration_steps = int(app["Slots"])
@@ -85,9 +85,15 @@ class HouseAgent:
                         is_mid_cycle = True
                         break
             
-            if not is_mid_cycle:
-                if "prob" in app and random.random() > app["prob"]:
-                    continue
+            if is_mid_cycle:
+                # Find yesterday's exact safe profile in self.personal_appliances
+                yesterdays_app = next((a for a in getattr(self, 'personal_appliances', []) if a["name"] == name), None)
+                if yesterdays_app:
+                    new_daily_appliances.append(yesterdays_app)
+                continue # Skip the rest of the randomizer for this specific appliance
+
+            if "prob" in app and random.random() > app["prob"]:
+                continue
 
             window_shift = random.uniform(-2.0, 2.0)
 
@@ -102,10 +108,27 @@ class HouseAgent:
                 duration_hours = int(app["Slots"]) * delta
             else:
                 duration_hours = app["Required_Energy"] / app["Max_Power"]
+                # To allow flattening the window must be large enough to charge at min_power
+                min_flat_window = app["Required_Energy"] / app.get("Min_Power", 1.5)
+
+                # Force the deadline to extend if the random window is too tight
+                adjusted_tf_temp = new_tf if new_tf >= new_ts else new_tf + 24.0
+                if (adjusted_tf_temp - new_ts) < min_flat_window:
+                    new_tf = (new_ts + min_flat_window) % 24.0
+                    
+                    # --- INJECTION 2: Actually save the widened deadline ---
+                    app["T_F"] = new_tf 
 
             # Handle widnows that cross midnight
-            adjusted_tf = new_tf if new_tf >= new_ts  else new_tf + 24.0
-            latest_start = adjusted_tf - duration_hours
+            adjusted_tf = new_tf if new_tf >= new_ts else new_tf + 24.0
+            
+            # --- INJECTION 3: Safe latest_start calculation ---
+            if app.get("power_type") == "flexible":
+                # The user must plug it in with enough time to do a slow, flat charge
+                latest_start = adjusted_tf - min_flat_window
+            else:
+                # Constant appliances use their fixed duration
+                latest_start = adjusted_tf - duration_hours
 
             # Pick a completely continuous rnadom fractional hour: when the user actually turns on the appliance
             if latest_start > new_ts:
@@ -119,6 +142,9 @@ class HouseAgent:
             new_daily_appliances.append(app)
         
         self.personal_appliances = new_daily_appliances
+        self.uncontrolled_appliances = [
+            app for app in new_daily_appliances if not app.get('deferrable', True)
+        ]
 
         # reset the tracker for today's specific appliances
         for app in self.personal_appliances:
@@ -163,8 +189,8 @@ class HouseAgent:
         T_fz = pulp.LpVariable.dicts(f"T_freezer_H{self.house_id}", mpc_steps, lowBound=-22.0, upBound=-15.0, cat='Continuous')
         P_comp_fr = pulp.LpVariable.dicts(f"Fridge_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
         P_comp_fz = pulp.LpVariable.dicts(f"Freezer_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
-        
-
+        P_max_local = pulp.LpVariable(f"Peak_Import_H{self.house_id}", lowBound=0, cat='Continuous') 
+        P_max_flex = pulp.LpVariable(f"Peak_Flex_H{self.house_id}", lowBound=0, cat='Continuous')
         # Chance constraint setup
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
         z_score = stats.norm.ppf(1- self.alpha)
@@ -181,7 +207,7 @@ class HouseAgent:
         E_deficit = {}
         for app in self.personal_appliances:
             if app.get("power_type") == "flexible":
-                E_deficit[app["name"]] = pulp.LpVariable(f"Defecit_{app['name']}_H{self.house_id}", lowBound=0, cat="Continuous")
+                E_deficit[app["name"]] = pulp.LpVariable(f"Deficit_{app['name']}_H{self.house_id}", lowBound=0, cat="Continuous")
 
         Reserve_deficit = pulp.LpVariable.dicts(f"Reserve_deficit_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
 
@@ -206,8 +232,15 @@ class HouseAgent:
 
             # The sum of unused grid capacity + unused battery discharge + interruptible charging
             # must always be capable of absorbing the suddent chance-constraint spikes
-            model += (self.house_limit - I[k]) + (D_E - y[k]) + z[k] >= safety_margin
+            # The battery inverter must always maintain enough headroom to absorb a rogue spike
+            model += (D_E - y[k]) + z[k] >= safety_margin
+            model += I[k] <= P_max_local, f"Track_Peak_{k}"
 
+            # Sum flexible appliances AND the Heat Pump to squash them together
+            flex_sum = pulp.lpSum([P_flex[(app["name"], k)] for app in self.personal_appliances if app.get("power_type") == "flexible" and (app["name"], k) in P_flex])
+            
+            # The £1.50 objective penalty will now force the EV and Heat Pump to flatten
+            model += flex_sum + P_HP[k] <= P_max_flex, f"Track_Flex_Peak_{k}"
             # The battery is forced to keep enough energy to survive a 30-minute spike
             reserve_hours = 0.5
             target_soc = (safety_margin * reserve_hours) / nu_E
@@ -224,7 +257,6 @@ class HouseAgent:
             
         # Physical Constraints
         local_elec_demand = [self.personal_elec_demand[(current_step + k) % total_steps] for k in mpc_steps]
-
         #Local Data Arrays for this specific prediction horizon
         # Rogue user interjection
         rogue_power = self.rogue_spikes_timeline[current_step]
@@ -334,7 +366,7 @@ class HouseAgent:
                         if found_session:
                             session_ended = True
                         model += O_flex[(name, k)] == 0, f"Off_Out_{name}_{k}"
-                        model += P_flex[(name, k)] == 0, f"Zero_out_{name}_{k}"
+                        model += P_flex[(name, k)] == 0, f"Zero_Out_{name}_{k}"
                     
                     # The Semi-Continuous Logic: If On, must be between Min and Max
                     model += P_flex[(name, k)] >= min_p * O_flex[(name, k)], f"Min_{name}_{k}"
@@ -381,9 +413,9 @@ class HouseAgent:
         total_cost = pulp.lpSum([
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) -
             delta * (I_export[k] * local_export_prices[k]) +  
-            (1000 * I_excess[k]) +      # penalty for going over 1kW
+            (1000 * I_excess[k]) +      # penalty for going over 1kW battery will no save itself for the 35p peak
             (200 * Reserve_deficit[k]) +
-            (0.5 * diff[k]) + 
+            (5.0 * diff[k]) + 
             delta * (y[k] * wear_cost_elec) + 
             delta * (P_HP[k] * wear_cost_therm)
             for k in mpc_steps
@@ -396,7 +428,8 @@ class HouseAgent:
 
 
         terminal_value_rate = 0.15
-        final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1])       
+        # Lowered so the battery will prioritize Agile prices over perfect flatness
+        final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1]) + (0.1 * P_max_local) + (1.5 * P_max_flex)        
         model += final_objective 
 
     
@@ -412,7 +445,7 @@ class HouseAgent:
 
         model.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=10))
 
-        if pulp.LpStatus[model.status] == "Optimal":
+        if pulp.LpStatus[model.status] == "Optimal"or (pulp.LpStatus[model.status] == "Not Solved" and pulp.value(I[0]) is not None):
             proposed_import_profile = [pulp.value(I[k]) for k in mpc_steps]
 
             current_import = pulp.value(I[0])
@@ -479,39 +512,57 @@ class HouseAgent:
             
             starting_appliances = []
             non_optimal_profile = [0.0] *  horizon
-
+            flexible_powers_fallback  = {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"}
 
             for app in self.personal_appliances:
                 name = app["name"]
-                if not self.appliances_already_run[name]:
-                    abs_start_limit = int(app["T_S"] * steps_per_hour)
+                if not self.appliances_already_run.get(name, False):
+                    abs_start_limit = int(app["human_start_hour"] * steps_per_hour)
                     abs_t = current_step % total_steps
                     if abs_t == abs_start_limit:
                         starting_appliances.append(name)
+                
+                #     abs_start_limit = int(app["T_S"] * steps_per_hour)
+                #     abs_t = current_step % total_steps
+                #     if abs_t == abs_start_limit:
+                #         starting_appliances.append(name)
 
-            current_demand = local_elec_demand[0]
-
+                
+            solar_generation_per_house = [self.pv_capacity * efficiency * multiplier for multiplier in solar_profile]
+            local_solar_gen = [solar_generation_per_house[(current_step + k) % 48] for k in mpc_steps]
+            
             # Revert to bang-bang control for thermostat
             if self.current_T_in < T_target:
-                dumb_hp_power = 3.0
+                dumb_hp_power = 3.0 
             else:
                 dumb_hp_power = 0.0
-                
-            current_demand += dumb_hp_power
 
+            current_demand = self.calculate_open_loop_demand(current_step)
+                
             # Add power for appliances starting right now
             for name in starting_appliances:
                 app_info = next(a for a in self.personal_appliances if a["name"] == name)
-                current_demand += app_info["Power"]
+                power = app_info.get("Power", app_info.get("Max_Power", 0.0))
+                current_demand += power
+                if app_info.get("power_type") == "flexible":
+                    flexible_powers_fallback[name] = power
                 
             # Add power for appliances that are already running from previous steps
             for app in self.personal_appliances:
+                # Skip uncontrolled again
+                if not app.get('deferrable', True):
+                    continue
+
                 name = app["name"]
-                duration = int(app["human_duration_hours"])
-                for past_k in range(1, duration):
+                duration_steps = int(app["human_duration_hours"] * steps_per_hour)
+                power = app.get("Power", app.get("Max_Power", 0.0))
+                
+                for past_k in range(1, duration_steps):
                     past_t = current_step - past_k
                     if past_t >= 0 and self.history_E.get((name, past_t), 0) == 1:
-                        current_demand += app["Power"]
+                        current_demand += power
+                        if app.get("power_type") == "flexible":
+                            flexible_powers_fallback[name] = power
                         break 
                         
             # 3. Calculate Grid Imports (Demand minus whatever the solar panels are currently producing)
@@ -537,72 +588,66 @@ class HouseAgent:
                 "freezer_compressor_k0": 0.3,
                 "rogue_power_k0": rogue_power,
                 "heat_pump_power_k0": dumb_hp_power,
-                "flexible_powers_k0": {app["name"]: 0.0 for app in self.personal_appliances if app.get("power_type") == "flexible"},
+                "flexible_powers_k0": flexible_powers_fallback,
                 "next_T_in_calculation": 20.0
             }
         # Empty RAM
 
-    def execute_physical_action(self, accepted_schedule, current_step):
-        # Updates the physical state of the house to move forward in time
-
-        # Calculate open loop control power usage
-        abs_t = current_step % total_steps
-        rogue_spike = accepted_schedule.get("rogue_power_k0", 0.0)
-        open_loop_demand = self.personal_elec_demand[abs_t] + rogue_spike
+    def calculate_open_loop_demand(self, current_step):
+        # Calculate the total electricity demand of the house as if it had no smart controls.
+        # This is the "dumb" baseline against which the smart system's performance is compared.
         
-        # Dumb Heat Pump: draws exactly what is needed right now, no thermal storage buffer
-        # Dumb Fridge & Freezer: Steady-state compressor draw to maintain temp, ~0.135kW each
-        # Dumb Appliances (They turn on exactly at their preferred start window)
-
-        # If the house is colder than the target, turn the Heat Pump on
+        abs_t = current_step % total_steps
+        
+        # Start with the base, non-appliance-specific electricity demand.
+        open_loop_demand = self.personal_elec_demand[abs_t]
+        
+        # Add demand from the heat pump, which runs if the house is below the target temperature.
+        # This is a simple "bang-bang" control model.
         if self.current_T_in < T_target:
-            dumb_hp_elec_power = 3.0 
+            dumb_hp_elec_power = 3.0  # Constant power draw when on
         else:
             dumb_hp_elec_power = 0.0
-       
-
         open_loop_demand += dumb_hp_elec_power
+
+        # Define the current time interval for checking appliance overlaps.
         step_start_hour = (current_step % total_steps) * delta
         step_end_hour = step_start_hour + delta
 
-        for app in self.personal_appliances:
+        # Iterate through the list of appliances that are assumed to be uncontrolled.
+        for app in self.uncontrolled_appliances:
             app_start = app["human_start_hour"]
             app_dur = app["human_duration_hours"]
             app_end = app_start + app_dur
 
+            # Determine the power draw based on the appliance type.
             power = app["Power"] if app.get("power_type") == "constant" else app["Max_Power"]
 
             total_overlap_hours = 0.0
 
+            # Check for overlaps across midnight by testing three 24-hour windows.
             for shift in [-24.0, 0.0, 24.0]:
                 s_start = app_start + shift
                 s_end = app_end + shift
 
+                # Calculate the duration of overlap between the appliance's run time and the current step.
                 overlap = max(0.0, min(step_end_hour, s_end) - max(step_start_hour, s_start))
                 total_overlap_hours += overlap
 
-            # Average power = (True Power * Hours Active) / Step Length
+            # Calculate the average power consumed by the appliance during this time step.
+            # This handles appliances that are only on for a fraction of the step.
             average_power_for_step = (power * total_overlap_hours) / delta
             open_loop_demand += average_power_for_step
-
-            # if app.get("power_type") == "constant":
-            #     duration = int(app["Slots"])
-            #     power = app["Power"]
-            # else: # Flexible (Unsmart EV chargers just plug in and draw max power instantly)
-            #     duration = int((app["Required_Energy"] / app["Max_Power"]) * steps_per_hour) + 1
-            #     power = app["Max_Power"]
-                
-            # end_step = (start_step + duration) % total_steps
             
-            # # Check if this exact step falls inside the "dumb" running window
-            # if start_step <= end_step:
-            #     if start_step <= abs_t < end_step:
-            #         open_loop_demand += power
-            # else: # The running window crosses midnight
-            #     if abs_t >= start_step or abs_t < end_step:
-            #         open_loop_demand += power
+        return open_loop_demand
 
+    def execute_physical_action(self, accepted_schedule, current_step):
+        # Updates the physical state of the house to move forward in time
+
+        open_loop_demand = self.calculate_open_loop_demand(current_step)
+        
         # Calculate Unsmart Grid Import (Demand minus whatever the solar is doing right now)
+        abs_t = current_step % total_steps
         solar_gen = self.pv_capacity * solar_profile[abs_t]
         open_loop_import = max(0.0, open_loop_demand - solar_gen)
         
@@ -611,16 +656,20 @@ class HouseAgent:
 
         self.current_T_in = accepted_schedule.get("next_T_in_calculation", self.current_T_in)
         self.history_T_in.append(self.current_T_in)
-
+        
+        #
+        # From this point onwards, the code is executing the *actual* smart control actions.
+        # It takes the MPC's optimal plan and adjusts it in real-time for any unforeseen events.
+        #
+        
         if accepted_schedule["status"] == "Optimal":
-
             # Real Time Adjusting Stage (RTAS) Control
             # Read MPC's original plan
             planned_discharge = accepted_schedule["planned_discharge_k0"]
             planned_import = accepted_schedule["planned_import_k0"]
             planned_export = accepted_schedule.get("planned_export_k0", 0.0)
             community_slack = accepted_schedule.get("community_slack_k0", 0.0)
-            dynamic_limit = self.house_limit + community_slack
+            dynamic_limit = planned_import + community_slack
 
             hp_power = accepted_schedule.get("heat_pump_power_k0", 0.0)
             flex_apps = accepted_schedule.get("flexible_powers_k0", {}).copy()            
@@ -695,12 +744,11 @@ class HouseAgent:
             self.history_E[("Freezer", current_step)] = accepted_schedule["freezer_compressor_k0"]
             
             # True Grid Import Average
-            avg_net = planned_import - planned_export + avg_rogue - (emergency_discharge * spike_duration / delta)
+            avg_net = planned_import - planned_export + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
 
             true_import = max(0.0, avg_net)
             true_export = max(0.0, -avg_net)
 
-            avg_import = planned_import + avg_rogue - (emergency_discharge * spike_duration / delta) - (shedded_hp * spike_duration / delta) - sum(s * spike_duration / delta for s in shedded_flex.values())
             self.history_E[("Grid_Import", current_step)] = true_import
             self.history_E[("Grid_Export", current_step)] = true_export
             self.daily_total_controlled_energy += true_import*delta
@@ -724,10 +772,27 @@ class HouseAgent:
             self.history_E[("Rogue_Load", current_step)] = accepted_schedule.get("rogue_power_k0", 0.0)
             self.history_E[("Battery_Discharge", current_step)] = 0.0
             
+            # Log flexible powers if any
+            flex_apps_fb = accepted_schedule.get("flexible_powers_k0", {})
+            for name, pwr in flex_apps_fb.items():
+                self.history_E[(name, current_step)] = pwr
+                if current_step % total_steps == int(next(a["T_S"] for a in self.personal_appliances if a["name"] == name) * steps_per_hour):
+                    self.flexible_energy_delivered[name] = 0.0
+                self.flexible_energy_delivered[name] += pwr * delta
+
+            # Log Fridge and Freezer
+            self.history_E[("Fridge", current_step)] = accepted_schedule.get("fridge_compressor_k0", 0.0)
+            self.history_E[("Freezer", current_step)] = accepted_schedule.get("freezer_compressor_k0", 0.0)
+
+            # Update state values from schedule (prevents frozen states during fallback)
+            self.current_soc = accepted_schedule.get("next_soc_calculation", self.current_soc)
+            self.current_soc_th = accepted_schedule.get("next_soc_th_calculation", self.current_soc_th)
+            self.current_T_fridge = accepted_schedule.get("next_T_fridge", self.current_T_fridge)
+            self.current_T_freezer = accepted_schedule.get("next_T_freezer", self.current_T_freezer)
+
             started_apps = accepted_schedule.get("starting_appliances", [])
             for app_name in started_apps:
                 self.appliances_already_run[app_name] = True
                 self.history_E[(app_name, current_step)] = 1        
                 
         
-

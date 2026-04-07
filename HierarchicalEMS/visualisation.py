@@ -39,13 +39,13 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
 
     # SLIDE 1: Community Demand & Grid Prices
     if community_actual_demand is not None:
-        ax1_top.plot(time_axis_hours, community_actual_demand, label="Actual Physical Demand (kW)", color='purple', linewidth=2, alpha=0.5)
+        ax1_top.plot(time_axis_hours, community_actual_demand, label="Uncontrolled Loop Demand (kW)", color='purple', linewidth=2, alpha=0.5)
     
     ax1_top.plot(time_axis_hours, community_demand, label="Total Community Grid Import (kW)", color='blue', linewidth=2)
     ax1_top.axhline(y=transformer_limit, color='red', linestyle='--', linewidth=2, label=f"Transformer Limit ({transformer_limit} kW)")
 
     ax1_top.set_ylabel("Power (kW)", fontweight='bold')
-    ax1_top.set_title("Slide 1/5: Microgrid Hierarchical Control", fontsize=14, fontweight='bold')
+    ax1_top.set_title("Slide 1/6: Microgrid Hierarchical Control", fontsize=14, fontweight='bold')
     ax1_top.grid(True, linestyle=':', alpha=0.6)
     
     extended_prices = [grid_prices[i % len(grid_prices)] for i in range(steps)]
@@ -85,7 +85,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
 
         ax2.set_ylabel("Power Dispatch for house 0 (kW)", fontweight='bold')
         ax2.set_xlabel("Time (Hours)", fontweight='bold')
-        ax2.set_title("Slide 2/5: House 0 Power Dispatch", fontsize=14, fontweight='bold')
+        ax2.set_title("Slide 2/6: House 0 Power Dispatch", fontsize=14, fontweight='bold')
         ax2.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
         ax2.grid(True, linestyle=':', alpha=0.6)
 
@@ -106,7 +106,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     ax3.set_ylim(0, peak_power * 1.2 if peak_power > 0 else 1.0) 
     ax3.set_ylabel("Power used (kW)", fontweight='bold')
     ax3.set_xlabel("Time (Hours)", fontweight='bold')
-    ax3.set_title("Slide 3/5: House 0 Stacked Appliance Schedule", fontsize=14, fontweight='bold')
+    ax3.set_title("Slide 3/6: House 0 Stacked Appliance Schedule", fontsize=14, fontweight='bold')
     ax3.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
     ax3.grid(True, axis='y', linestyle=':', alpha=0.6)
 
@@ -153,7 +153,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         ax5_top.axhline(y=4.0, color='black', linestyle=':', linewidth=1.5, alpha=0.6, label="Target")
         ax5_top.axhline(y=6.0, color='red', linestyle='--', linewidth=1.5, alpha=0.6, label="Max Limit")
         ax5_top.set_ylabel("Fridge Temp ($^\circ$C)", fontweight='bold')
-        ax5_top.set_title("Slide 5/5: House 0 Refrigeration Profiles", fontsize=14, fontweight='bold')
+        ax5_top.set_title("Slide 5/6: House 0 Refrigeration Profiles", fontsize=14, fontweight='bold')
         ax5_top.grid(True, linestyle=':', alpha=0.6)
         
         if has_fridge_power:
