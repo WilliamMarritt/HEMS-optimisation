@@ -95,8 +95,48 @@ def run_simulation():
     print("\n" + "="*40)
     print("  TOTAL SIMULATION HOUSE ENERGY SUMMARY")
     print("="*40)
+
+    community_total_sla_score = 0.0
+    sim_steps_run = len(houses[0].history_T_in)
+    
     for house in houses:
         # Find the absolute highest peak from the open loop vs closed loop
+        total_tasks = 0.0
+        fulfilled_tasks = 0.0
+        
+        ev_appliance = next((app for app in house.personal_appliances if app["name"] == "Electric car"), None)
+        if ev_appliance is not None:
+            ev_req = ev_appliance.get("Required_Energy", 0.0)
+            if ev_req > 0:
+                # Sum the exact kW pulled at every step * 0.5 hours (delta)
+                ev_delivered = sum(house.history_E.get(("Electric car", s), 0.0) * delta for s in range(sim_steps_run))
+                total_tasks += 1.0
+                fulfilled_tasks += min(1.0, ev_delivered / ev_req)
+
+        # Standard appliances - binary score
+        for app in house.personal_appliances:
+            if app.get("power_type") == "flexible": 
+                continue # Already handled EV
+            total_tasks += 1.0
+            if any(house.history_E.get((app["name"], s), 0) > 0 for s in range(sim_steps_run)):
+                    fulfilled_tasks += 1.0
+        
+        # Instead of a strict 18.0 threshold, calculate the average temperature.        thermal_steps_ok = sum(1 for t in house.history_T_in if t >= 18.0)
+        avg_temp = sum(house.history_T_in) / sim_steps_run if sim_steps_run > 0 else 0
+            
+        total_tasks += 1.0
+        if avg_temp >= 18.0:
+            fulfilled_tasks += 1.0
+        elif avg_temp >= 16.0:
+            # Partial credit: 16.0C to 17.9C gives a sliding scale from 50% to 95%
+            fulfilled_tasks += 0.5 + (0.5 * ((avg_temp - 16.0) / 2.0))
+        else:
+            fulfilled_tasks += 0.0
+        
+        # Calculate final percentage for this house
+        house_sla_pct = (fulfilled_tasks / total_tasks) * 100 if total_tasks > 0 else 100.0
+        community_total_sla_score += house_sla_pct
+
         max_raw_peak = 0.0
         peak_raw_step = 0
         for s in range(simulation_steps):
@@ -129,11 +169,17 @@ def run_simulation():
         vprint(f"    - Total Energy Used (48h): {house.daily_total_uncontrolled_energy:.2f} kWh")
         vprint(f"  Smart HEMS (Closed Loop):")
         vprint(f"    - Grid Import Peak : {max_controlled_peak:.2f} kW")
-        vprint(f"    - Total Energy Used (48h): {house.daily_total_controlled_energy:.2f} kWh\n")
+        vprint(f"    - Total Energy Used (48h): {house.daily_total_controlled_energy:.2f} kWh")
+
+        ev_appliance = next((app for app in appliances if app["name"] == "Electric car"), None)#
+        if ev_appliance is not None:
+            ev_delivered = house.flexible_energy_delivered.get("Electric car", 0.0)
+            ev_req = next((app["Required_Energy"] for app in appliances if app["name"] == "Electric car"), 0.0)
+            vprint(f"    - EV Charge Delivered: {ev_delivered:.2f} kWh / {ev_req:.2f} kWhn")
+        vprint(f"    - Comprehensive Service Level (SLA): {house_sla_pct:.1f}%\n")
 
     uncontrolled_community_peak = max(history_actual_community_demand)
     controlled_community_peak = max(history_community_demand)
-
     print("Simulation Complete")
     print(f"Time taken: {end_time - start_time:.2f} seconds")
 
@@ -185,6 +231,8 @@ def run_simulation():
     print("-" * 65)
     print("User Comfort")
     print(f"  H0 Fridge Violations (>5.5°C)     | {'0':<11} | {fridge_violations:<11}")
+    avg_community_sla = community_total_sla_score / num_homes
+    print(f"  Community Appliance SLA (%)       | {'100.0%':<11} | {avg_community_sla:.1f}%")
 
     total_uncontrolled_kwh = sum(house.daily_total_uncontrolled_energy for house in houses)
     total_controlled_kwh = sum(house.daily_total_controlled_energy for house in houses)

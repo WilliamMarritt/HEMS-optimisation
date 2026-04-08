@@ -24,7 +24,7 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.alpha = 0.15                       # Define risk tolerance, 0.05 = 95% guarantee of safety
         self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
@@ -324,7 +324,7 @@ class HouseAgent:
                             if self.history_E.get((name, past_t), 0) == 1:
                                 locked_in_power[k] += power
 
-            elif power_type == "flexible" and interruptible:
+            elif power_type == "flexible":
                 min_p = app["Min_Power"]
                 max_p = app["Max_Power"]
                 req_energy = app["Required_Energy"]
@@ -424,7 +424,7 @@ class HouseAgent:
 
         for app in self.personal_appliances:
             if app.get("power_type") == "flexible":
-                total_cost += 500 * E_deficit[app["name"]]
+                total_cost += 5000 * E_deficit[app["name"]]
 
 
         terminal_value_rate = 0.15
