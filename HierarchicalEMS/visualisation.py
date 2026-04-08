@@ -6,7 +6,8 @@ import numpy as np
 from matplotlib.widgets import Button
 from config import COP  # Import COP to calculate thermal output
 
-def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_prices, appliance_data,
+def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb_heat_pump=None,
+                            transformer_limit=None, h0_soc=None, grid_prices=None, appliance_data=None,
                             h0_import=None, h0_discharge=None, h0_solar=None, h0_charge=None, 
                             h0_fridge_temp=None, h0_freezer_temp=None, community_actual_demand=None, 
                             h0_heat_pump=None, h0_thermal_storage=None, all_houses_import=None, h0_indoor_temp=None) :
@@ -32,6 +33,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
     ax5_bottom = fig.add_subplot(212, sharex=ax1_top)
 
     ax6 = fig.add_subplot(111)
+    ax7 = fig.add_subplot(111)
 
     # Apply the 3-hour ticks to all axes
     for ax in [ax1_top, ax1_bottom, ax2, ax3, ax4, ax5_top, ax5_bottom, ax6]:
@@ -66,10 +68,13 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         ax1_soc = ax1_bottom.twinx()
         ax1_soc.plot(time_axis_hours, h0_soc, label="House 0 Battery SoC (kWh)", color='green', linewidth=2)
         ax1_soc.set_ylabel("Stored Energy (kWh)", color='green', fontweight='bold')
+        ax1_soc.set_ylim(ymin=0)
+
 
         lines_b1, labels_b1 = ax1_bottom.get_legend_handles_labels()
         lines_b2, labels_b2 = ax1_soc.get_legend_handles_labels()
         ax1_bottom.legend(lines_b1 + lines_b2, labels_b1 + labels_b2, bbox_to_anchor=(1.03, 1), loc='upper left', borderaxespad=0.)
+
 
     # SLIDE 2: Power Dispatch
     if h0_solar is not None and h0_charge is not None:
@@ -201,7 +206,25 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         ax6.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
         ax6.grid(True, axis='y', linestyle=':', alpha=0.6)
 
+    if dumb_appliance_data is not None:
+        bottom_arr_dumb = np.zeros(steps)
+        
+        if h0_dumb_heat_pump is not None and sum(h0_dumb_heat_pump) > 0:
+            ax7.bar(time_axis_hours, h0_dumb_heat_pump, bottom=bottom_arr_dumb, width=0.5, label="Heat Pump (Dumb)", alpha=0.8, align="edge", color="purple")
+            bottom_arr_dumb += np.array(h0_dumb_heat_pump)
 
+        for i, (name, power_series) in enumerate(dumb_appliance_data.items()):
+            if sum(power_series) > 0: 
+                ax7.bar(time_axis_hours, power_series, bottom=bottom_arr_dumb, width=0.5, label=name, alpha=0.8, align='edge', color=colors[i % 20])
+                bottom_arr_dumb += np.array(power_series)
+
+        peak_power_dumb = max(bottom_arr_dumb) if len(bottom_arr_dumb) > 0 else 1.0
+        ax7.set_ylim(0, peak_power_dumb * 1.2 if peak_power_dumb > 0 else 1.0) 
+        ax7.set_ylabel("Power used (kW)", fontweight='bold')
+        ax7.set_xlabel("Time (Hours)", fontweight='bold')
+        ax7.set_title("Slide 7/7: House 0 UNCONTROLLED Appliance Schedule", fontsize=14, fontweight='bold')
+        ax7.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+        ax7.grid(True, axis='y', linestyle=':', alpha=0.6)
 
 
     slide1_axes = [ax1_top, ax1_bottom, ax1_price]
@@ -220,7 +243,7 @@ def plot_simulation_results(community_demand, transformer_limit, h0_soc, grid_pr
         slide5_axes.append(ax5_bottom)
         if has_freezer_power: slide5_axes.append(ax5_bot_p)
         
-    slides = [slide1_axes, [ax2], [ax3], slide4_axes, slide5_axes, [ax6]]
+    slides = [slide1_axes, [ax2], [ax3], slide4_axes, slide5_axes, [ax6], [ax7]]
     
     class SlideController:
         ind = 0

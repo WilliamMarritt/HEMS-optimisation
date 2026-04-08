@@ -13,7 +13,7 @@ import random
 
 def run_simulation():
     # locks the random shifting to a specific repeatable timeline
-    random.seed(42)
+    random.seed(41)
 
     print("Initialising Microgrid Community")
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]    
@@ -97,12 +97,35 @@ def run_simulation():
     print("="*40)
     for house in houses:
         # Find the absolute highest peak from the open loop vs closed loop
-        max_raw_peak = max([house.history_E[("Open_Loop_Import", s)] for s in range(simulation_steps)])
+        max_raw_peak = 0.0
+        peak_raw_step = 0
+        for s in range(simulation_steps):
+            val = house.history_E.get(("Open_Loop_Import", s), 0.0)
+            if val > max_raw_peak:
+                max_raw_peak = val
+                peak_raw_step = s
+        
+        peak_time_hours = peak_raw_step * delta
+        
+        # Identify which devices were running during that peak step
+        causing_devices = []
+        dumb_hp = house.history_E.get(("Open_Loop_Heat_Pump", peak_raw_step), 0.0)
+        if dumb_hp > 0.1:
+            causing_devices.append(f"Heat Pump ({dumb_hp:.1f}kW)")
+            
+        for app in appliances:
+            dumb_pwr = house.history_E.get((f"Open_Loop_{app['name']}", peak_raw_step), 0.0)
+            if dumb_pwr > 0.1:
+                causing_devices.append(f"{app['name']} ({dumb_pwr:.1f}kW)")
+                
+        device_str = ", ".join(causing_devices) if causing_devices else "Base Load / Standard Appliances"
+
         max_controlled_peak = max([house.history_E.get(("Grid_Import", s), 0) for s in range(simulation_steps)])
         
         vprint(f"House {house.house_id}:")
         vprint(f"  Unsmart House (Open Loop):")
-        vprint(f"    - Grid Import Peak : {max_raw_peak:.2f} kW")
+        vprint(f"    - Grid Import Peak : {max_raw_peak:.2f} kW (Hit at Hour {peak_time_hours})")
+        vprint(f"    - Devices Causing Peak : {device_str}")
         vprint(f"    - Total Energy Used (48h): {house.daily_total_uncontrolled_energy:.2f} kWh")
         vprint(f"  Smart HEMS (Closed Loop):")
         vprint(f"    - Grid Import Peak : {max_controlled_peak:.2f} kW")
@@ -282,10 +305,26 @@ def run_simulation():
     # print(f"Sum of individual house imports: {sum_of_individual_imports} kW")
     # print(f"Sum of individual house exports: {sum_of_individual_exports} kW")
     # print(f"Net community transformer load: {total_community_demand} kW")
+    dumb_appliance_data = {app["name"]: [0.0] * simulation_steps for app in appliances}
+    dumb_appliance_data["Fridge"] = [0.0] * simulation_steps
+    dumb_appliance_data["Freezer"] = [0.0] * simulation_steps
+    h0_dumb_heat_pump = [0.0] * simulation_steps
+
+
+    for t in range(simulation_steps):
+        h0_dumb_heat_pump[t] = houses[0].history_E.get(("Open_Loop_Heat_Pump", t), 0.0)
+        
+        dumb_appliance_data["Fridge"][t] = houses[0].history_E.get(("Open_Loop_Fridge", t), 0.0)
+        dumb_appliance_data["Freezer"][t] = houses[0].history_E.get(("Open_Loop_Freezer", t), 0.0)
+        for app in appliances:
+            dumb_appliance_data[app["name"]][t] = houses[0].history_E.get((f"Open_Loop_{app['name']}", t), 0.0)
+            
 
 
     plot_simulation_results(
         community_demand=history_community_demand,
+        dumb_appliance_data=dumb_appliance_data,
+        h0_dumb_heat_pump=h0_dumb_heat_pump,
         transformer_limit=I_max,
         h0_soc=history_h0_soc,
         grid_prices=price_grid_elec,

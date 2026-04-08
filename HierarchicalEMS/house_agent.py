@@ -24,7 +24,7 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.15                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.alpha = 0.01                       # Define risk tolerance, 0.05 = 95% guarantee of safety
         self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
@@ -242,7 +242,7 @@ class HouseAgent:
             # The £1.50 objective penalty will now force the EV and Heat Pump to flatten
             model += flex_sum + P_HP[k] <= P_max_flex, f"Track_Flex_Peak_{k}"
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            reserve_hours = 0.5
+            reserve_hours = 3.0
             target_soc = (safety_margin * reserve_hours) / nu_E
             model += S_E[k] >= target_soc - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
 
@@ -596,10 +596,7 @@ class HouseAgent:
     def calculate_open_loop_demand(self, current_step):
         # Calculate the total electricity demand of the house as if it had no smart controls.
         # This is the "dumb" baseline against which the smart system's performance is compared.
-        
         abs_t = current_step % total_steps
-        
-        # Start with the base, non-appliance-specific electricity demand.
         open_loop_demand = self.personal_elec_demand[abs_t]
         
         # Instead of sharing the Smart House's thermometer calculate the exact physical energy required to maintain the target temperature.
@@ -607,6 +604,9 @@ class HouseAgent:
         local_T_out = current_ambient_temp_profile[abs_t]
         dumb_hp_elec_power = max(0.0, (UA * (T_target - local_T_out)) / COP)
         open_loop_demand += dumb_hp_elec_power
+
+        self.history_E[("Open_Loop_Heat_Pump", current_step)] = dumb_hp_elec_power
+
 
         # Define the current time interval for checking appliance overlaps.
         step_start_hour = (current_step % total_steps) * delta
@@ -635,6 +635,14 @@ class HouseAgent:
             # Calculate the average power consumed by the appliance during this time step.
             average_power_for_step = (power * total_overlap_hours) / delta
             open_loop_demand += average_power_for_step
+
+            self.history_E[(f"Open_Loop_{app['name']}", current_step)] = average_power_for_step
+            dumb_fridge_power = 0.135
+            dumb_freezer_power = 0.135
+            open_loop_demand += (dumb_fridge_power + dumb_freezer_power)
+            
+            self.history_E[("Open_Loop_Fridge", current_step)] = dumb_fridge_power
+            self.history_E[("Open_Loop_Freezer", current_step)] = dumb_freezer_power
             
         return open_loop_demand
     
