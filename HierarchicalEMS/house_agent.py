@@ -602,26 +602,24 @@ class HouseAgent:
         # Start with the base, non-appliance-specific electricity demand.
         open_loop_demand = self.personal_elec_demand[abs_t]
         
-        # Add demand from the heat pump, which runs if the house is below the target temperature.
-        # This is a simple "bang-bang" control model.
-        if self.current_T_in < T_target:
-            dumb_hp_elec_power = 3.0  # Constant power draw when on
-        else:
-            dumb_hp_elec_power = 0.0
+        # Instead of sharing the Smart House's thermometer calculate the exact physical energy required to maintain the target temperature.
+        # A dumb house's bang-bang thermostat averages out to exactly this continuous load:
+        local_T_out = current_ambient_temp_profile[abs_t]
+        dumb_hp_elec_power = max(0.0, (UA * (T_target - local_T_out)) / COP)
         open_loop_demand += dumb_hp_elec_power
 
         # Define the current time interval for checking appliance overlaps.
         step_start_hour = (current_step % total_steps) * delta
         step_end_hour = step_start_hour + delta
 
-        # Iterate through the list of appliances that are assumed to be uncontrolled.
-        for app in self.uncontrolled_appliances:
+        # A dumb house plugs the EV in immediately and blasts it at Max Power.
+        for app in self.personal_appliances:
             app_start = app["human_start_hour"]
             app_dur = app["human_duration_hours"]
             app_end = app_start + app_dur
 
             # Determine the power draw based on the appliance type.
-            power = app["Power"] if app.get("power_type") == "constant" else app["Max_Power"]
+            power = app["Power"] if app.get("power_type") == "constant" else app.get("Max_Power", 0.0)
 
             total_overlap_hours = 0.0
 
@@ -635,12 +633,11 @@ class HouseAgent:
                 total_overlap_hours += overlap
 
             # Calculate the average power consumed by the appliance during this time step.
-            # This handles appliances that are only on for a fraction of the step.
             average_power_for_step = (power * total_overlap_hours) / delta
             open_loop_demand += average_power_for_step
             
         return open_loop_demand
-
+    
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
 
