@@ -11,39 +11,47 @@ from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
-num_simulations = 5
+num_simulations = 20
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
     np.random.seed(seed_val) 
     random.seed(seed_val)
     
+
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]
     community = CommunityController(transformer_limit=I_max)
+    
 
     for house in houses:
         house.alpha = alpha
         house.sigma_human = sigma
 
-    max_peak = 0.0
-    total_community_cost = 0.0
+    max_smart_peak = 0.0
+    total_smart_cost = 0.0
+
+    max_open_peak = 0.0
+    total_open_cost = 0.0
 
     for step in range(48): 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
 
-        step_actual_peak = 0.0
-        step_actual_cost = 0.0
+        step_smart_import = 0.0
+        step_open_import = 0.0
 
         for house in houses:
             sched = next(s for s in approved_schedules if s["house_id"] == house.house_id)
             house.execute_physical_action(sched, step)
-            true_import = house.history_E.get(("Grid_Import", step), 0.0)
+            step_smart_import = house.history_E.get(("Grid_Import", step), 0.0)
+            step_open_import += house.calculate_open_loop_demand(step)
 
-            step_actual_peak += true_import
-            step_actual_cost += true_import * price_grid_elec[step % total_steps] * delta
+        max_smart_peak = max(max_smart_peak, step_smart_import)
+        max_open_peak = max(max_open_peak, step_open_import)
+        total_smart_cost += step_smart_import * price_grid_elec[step % total_steps] * delta
+        total_open_cost += step_open_import * price_grid_elec[step % total_steps] * delta
 
-        max_peak = max(max_peak, step_actual_peak)
-        total_community_cost += step_actual_cost
+    
+
 
     community_total_sla_score = 0.0
     sim_steps_run = len(houses[0].history_T_in) 
@@ -85,13 +93,16 @@ def run_single_simulation(params):
 
     avg_community_sla = community_total_sla_score / num_homes
 
-    return {'Sigma': sigma, 'Alpha': alpha, 'Seed': seed_val, 'Cost': total_community_cost, 'Peak': max_peak, 'SLA': avg_community_sla}
+    cost_saving_pct = ((total_open_cost - total_smart_cost) / max(0.1, total_open_cost)) * 100
+    peak_reduction_pct = ((max_open_peak - max_smart_peak) / max(0.1, max_open_peak)) * 100
+
+    return {'Sigma': sigma, 'Alpha': alpha, 'Seed': seed_val, 'Cost_Saving': cost_saving_pct, 'Peak_Reduction': peak_reduction_pct, 'SLA': avg_community_sla}
 
 
 if __name__ == '__main__':
     csv_file = 'test.csv'
     completed_runs = set()
-    cols = ['Sigma', 'Alpha', 'Seed', 'Cost', 'Peak', 'SLA']
+    cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA']
     if os.path.exists(csv_file):
         try:
             existing_df = pd.read_csv(csv_file)
@@ -116,7 +127,7 @@ if __name__ == '__main__':
                 # Append single row to CSV immediately
                 pd.DataFrame([res], columns=cols).to_csv(csv_file, mode='a', header=False, index=False)
                 
-                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak']:>5.2f} kW | Cost: £{res['Cost']:.2f}")
+                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: £{res['Cost_Saving']:.2f}")
             except Exception as exc:
                 print(f"A simulation crashed: {exc}")
 
@@ -130,8 +141,8 @@ if __name__ == '__main__':
     for _, row in avg_df.iterrows():
         s = round(row['Sigma'], 2)
         results[s]['alphas'].append(round(row['Alpha'], 4)),
-        results[s]['costs'].append(round(row['Cost'], 2)),
-        results[s]['peaks'].append(int(row['Peak']))
+        results[s]['costs'].append(round(row['Cost_Saving'], 2)),
+        results[s]['peaks'].append(round(row['Peak_Reduction'], 2))
         results[s]['slas'].append(round(row['SLA'], 2))
 
     for sigma in sigmas:
@@ -145,18 +156,17 @@ if __name__ == '__main__':
     for i, sigma in enumerate(sigmas):
         axes[0, 0].plot(results[sigma]['alphas'], results[sigma]['costs'], marker='o', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
     axes[0, 0].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[0, 0].set_ylabel('Total Community Daily Cost (£)', fontsize=12)
-    axes[0, 0].set_title('Financial Impact of Paranoia', fontsize=14, fontweight='bold')
+    axes[0, 0].set_ylabel('Cost Savings vs Dumb House (%)', fontsize=12)
+    axes[0, 0].set_title('Financial Benefit of Smart HEMS', fontsize=14, fontweight='bold')
     axes[0, 0].grid(True, linestyle='--', alpha=0.7)
     axes[0, 0].legend()
     axes[0, 0].invert_xaxis()
 
     for i, sigma in enumerate(sigmas):
         axes[0, 1].plot(results[sigma]['alphas'], results[sigma]['peaks'], marker='s', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 1].axhline(y=I_max, color='r', linestyle='--', linewidth=2, label=f'Transformer Limit ({I_max}kW)')
     axes[0, 1].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[0, 1].set_ylabel('Maximum Peak Demand (kW)', fontsize=12)
-    axes[0, 1].set_title('Grid Security vs. Risk Tolerance', fontsize=14, fontweight='bold')
+    axes[0, 1].set_ylabel('Peak Reduction vs Dumb House (%)', fontsize=12)
+    axes[0, 1].set_title('Grid Security Benefit', fontsize=14, fontweight='bold')
     axes[0, 1].grid(True, linestyle='--', alpha=0.7)
     axes[0, 1].legend()
     axes[0, 1].invert_xaxis()
@@ -173,10 +183,9 @@ if __name__ == '__main__':
 
     for i, sigma in enumerate(sigmas):
         axes[1, 1].plot(results[sigma]['costs'], results[sigma]['peaks'], marker='^', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 1].axhline(y=I_max, color='r', linestyle='--', linewidth=2, label=f'Transformer Limit ({I_max}kW)')
-    axes[1, 1].set_xlabel('Total Community Daily Cost (£)', fontsize=12)
-    axes[1, 1].set_ylabel('Maximum Peak Demand (kW)', fontsize=12)
-    axes[1, 1].set_title('Pareto Frontier: Cost vs. Peak', fontsize=14, fontweight='bold')
+    axes[1, 1].set_xlabel('Cost Savings (%)', fontsize=12)
+    axes[1, 1].set_ylabel('Peak Reduction (%)', fontsize=12)
+    axes[1, 1].set_title('Normalized Pareto: Savings vs. Peak Reduction', fontsize=14, fontweight='bold')
     axes[1, 1].grid(True, linestyle='--', alpha=0.7)
     axes[1, 1].legend()
 

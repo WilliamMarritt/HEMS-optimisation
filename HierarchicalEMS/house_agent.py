@@ -637,13 +637,14 @@ class HouseAgent:
             open_loop_demand += average_power_for_step
 
             self.history_E[(f"Open_Loop_{app['name']}", current_step)] = average_power_for_step
-            dumb_fridge_power = 0.135
-            dumb_freezer_power = 0.135
-            open_loop_demand += (dumb_fridge_power + dumb_freezer_power)
             
-            self.history_E[("Open_Loop_Fridge", current_step)] = dumb_fridge_power
-            self.history_E[("Open_Loop_Freezer", current_step)] = dumb_freezer_power
-            
+        dumb_fridge_power = 0.135
+        dumb_freezer_power = 0.135
+        open_loop_demand += (dumb_fridge_power + dumb_freezer_power)
+        
+        self.history_E[("Open_Loop_Fridge", current_step)] = dumb_fridge_power
+        self.history_E[("Open_Loop_Freezer", current_step)] = dumb_freezer_power
+        
         return open_loop_demand
     
     def execute_physical_action(self, accepted_schedule, current_step):
