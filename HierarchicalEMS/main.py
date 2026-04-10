@@ -13,7 +13,7 @@ import random
 
 def run_simulation():
     # locks the random shifting to a specific repeatable timeline
-    random.seed(41)
+    random.seed(1)
 
     print("Initialising Microgrid Community")
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]    

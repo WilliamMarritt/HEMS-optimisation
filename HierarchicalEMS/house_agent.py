@@ -31,6 +31,7 @@ class HouseAgent:
         self.daily_total_uncontrolled_energy = 0.0
         self.daily_total_controlled_energy = 0.0
         self.current_T_in = 20.0
+        
     
         # Add randomness
         magnitude = random.uniform(0.7, 1.3)    # +/- 30% of total energy use
@@ -149,6 +150,9 @@ class HouseAgent:
         for app in self.personal_appliances:
             if not self.history_E.get((app["name"], total_steps -1 ), 0) == 1:
                 self.appliances_already_run[app["name"]] = False
+        ev = next((a for a in self.personal_appliances if a["name"] == "Electric car"), None)
+        if ev:
+            print(f"--> House {self.house_id} EV Window: Plugs in at {ev['T_S']:.2f}, Needs full by {ev['T_F']:.2f}. Energy needed: {ev.get('Required_Energy', 0)} kWh")
 
     def generate_proposed_schedule(self, current_step, community_penalty_prices):
         # Lower level solver
@@ -171,7 +175,7 @@ class HouseAgent:
         S_E = pulp.LpVariable.dicts(f"SoC_H{self.house_id}", mpc_steps, 0, self.battery_capacity)
         z = pulp.LpVariable.dicts(f"Charge_Rate_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         y = pulp.LpVariable.dicts(f"Discharge_Rate_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
-        I = pulp.LpVariable.dicts(f"Grid_Import_H{self.house_id}", mpc_steps, lowBound=0, upBound=I_max, cat='Continuous')
+        I = pulp.LpVariable.dicts(f"Grid_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         I_excess = pulp.LpVariable.dicts(f"Excess_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='continuous')
         I_export = pulp.LpVariable.dicts(f"Grid Export", mpc_steps, lowBound=0)
         # binary state (1 = Importing, 0 = Exporting)
@@ -241,7 +245,7 @@ class HouseAgent:
             # The £1.50 objective penalty will now force the EV and Heat Pump to flatten
             model += flex_sum + P_HP[k] <= P_max_flex, f"Track_Flex_Peak_{k}"
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            reserve_hours = 3.0
+            reserve_hours = 1.0
             target_soc = (safety_margin * reserve_hours) / nu_E
             model += S_E[k] >= target_soc - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
 
@@ -407,10 +411,10 @@ class HouseAgent:
         local_export_prices = [price_grid_export[(current_step + k) % 48] for k in mpc_steps]
 
         # Generate a noise profile for this specific house
-        noise = self.noise
+        # noise = self.noise
 
         total_cost = pulp.lpSum([
-            delta * (I[k] * (local_prices[k] + community_penalty_prices[k] + noise[k])) -
+            delta * (I[k] * (local_prices[k] + community_penalty_prices[k])) -
             delta * (I_export[k] * local_export_prices[k]) +  
             (1000 * I_excess[k]) +      # penalty for going over 1kW battery will no save itself for the 35p peak
             (200 * Reserve_deficit[k]) +
@@ -426,9 +430,9 @@ class HouseAgent:
                 total_cost += 5000 * E_deficit[app["name"]]
 
 
-        terminal_value_rate = 0.08
+        terminal_value_rate = 0
         # Lowered so the battery will prioritize Agile prices over perfect flatness
-        final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1]) + (0.1 * P_max_local) + (1.5 * P_max_flex)        
+        final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1]) + (0.1 * P_max_local) + (10 * P_max_flex)        
         model += final_objective 
 
     

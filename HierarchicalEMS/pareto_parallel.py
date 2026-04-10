@@ -9,12 +9,12 @@ from data import *
 from house_agent import HouseAgent
 from community_controller import CommunityController
 
-alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
-sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
+# alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
+# sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
-# alphas = [0.15]
-# sigmas = [0.75]
-num_simulations = 5
+alphas = [0.15]
+sigmas = [0.75]
+num_simulations = 1
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -32,9 +32,12 @@ def run_single_simulation(params):
 
     max_smart_peak = 0.0
     total_smart_cost = 0.0
+    total_smart_energy = 0.0
 
     max_open_peak = 0.0
     total_open_cost = 0.0
+    total_open_energy = 0.0
+
 
     for step in range(48): 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
@@ -54,7 +57,7 @@ def run_single_simulation(params):
             
             abs_t = step % total_steps
             pv_gen = house.pv_capacity * solar_profile[abs_t]
-            
+
             open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
             step_open_import += open_import
             step_open_export += open_export
@@ -68,7 +71,9 @@ def run_single_simulation(params):
         total_smart_cost += (step_smart_import * price_in * delta) - (step_smart_export * price_out * delta)
         total_open_cost += (step_open_import * price_in * delta) - (step_open_export * price_out * delta)
 
-    
+        total_smart_energy += (step_smart_import * delta)
+        total_open_energy += (step_open_import * delta)
+
 
 
     community_total_sla_score = 0.0
@@ -128,13 +133,25 @@ def run_single_simulation(params):
     cost_saving_pct = (total_open_cost - total_smart_cost) / total_open_cost * 100
     peak_reduction_pct = (max_open_peak - max_smart_peak) / max_open_peak * 100
 
-    return {'Sigma': sigma, 'Alpha': alpha, 'Seed': seed_val, 'Cost_Saving': cost_saving_pct, 'Peak_Reduction': peak_reduction_pct, 'SLA': avg_community_sla}
+    return {'Sigma': sigma,
+            'Alpha': alpha,
+            'Seed': seed_val,
+            'Cost_Saving': cost_saving_pct,
+            'Peak_Reduction': peak_reduction_pct, 
+            'SLA': avg_community_sla,
+            'Smart_Energy': total_smart_energy,
+            'Open_Energy': total_open_energy,
+            'Smart_Peak': max_smart_peak,
+            'Open_Peak': max_open_peak,
+            'Smart_Cost': total_smart_cost,
+            'Open_Cost': total_open_cost,
+            }
 
 
 if __name__ == '__main__':
-    csv_file = 'test3.csv'
+    csv_file = 'test4.csv'
     completed_runs = set()
-    cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA']
+    cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA', 'Smart_Energy', 'Open_Energy', 'Smart_Peak', 'Open_Peak', 'Smart_Cost', 'Open_Cost']
     if os.path.exists(csv_file):
         try:
             existing_df = pd.read_csv(csv_file)
@@ -159,7 +176,7 @@ if __name__ == '__main__':
                 # Append single row to CSV immediately
                 pd.DataFrame([res], columns=cols).to_csv(csv_file, mode='a', header=False, index=False)
                 
-                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: £{res['Cost_Saving']:.2f}")
+                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: £{res['Cost_Saving']:.2f | SLA: {res['SLA']:>5.2f}")
             except Exception as exc:
                 print(f"A simulation crashed: {exc}")
 

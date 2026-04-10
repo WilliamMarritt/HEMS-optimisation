@@ -1,6 +1,7 @@
 # community_controller.py
 from config import *
 import concurrent.futures
+import random
 
 
 class CommunityController:
@@ -26,8 +27,13 @@ class CommunityController:
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(house_agents)) as executor:
                 # executor.map runs them all at once, but returns the 'data' results 
                 # in the exact same order as the 'house_agents' list
-                results = list(executor.map(lambda h: h.generate_proposed_schedule(current_step, current_penalties), house_agents))
-
+                results = list(executor.map(
+                    lambda h: h.generate_proposed_schedule(
+                        current_step, 
+                        [p * random.uniform(0.75, 1.25) for p in current_penalties]
+                    ), 
+                    house_agents
+                ))
             for house, data in zip(house_agents, results):
                 if data["status"] == "Optimal":
                     proposed_profiles.append(data["proposed_import_profile"])
@@ -38,6 +44,16 @@ class CommunityController:
                     house_data_packages.append(data)
                     
             total_community_demand = [sum(x) for x in zip(*proposed_profiles)]
+
+            # print(f"--- Iteration {iteration} ---")
+            # for i, data in enumerate(house_data_packages):
+            #     profile = data["proposed_import_profile"]
+            #     peak_power = max(profile)
+            #     peak_step = profile.index(peak_power)
+            #     # Only print the big movers (e.g. EV or Heat Pump spikes)
+            #     if peak_power > 2.0: 
+            #         print(f"  House {i} -> Peak: {peak_power:.1f}kW at Step {peak_step}")
+            # print(f"  COMMUNITY TOTAL PEAK: {max(total_community_demand):.1f} kW")
 
             breach_detected = False
             for k in range(48):
@@ -52,6 +68,11 @@ class CommunityController:
                 final_approved_data = house_data_packages
                 vprint(f"    [Step {current_step}] Schedules Approved in {iteration} iterations. Peak Demand: {max(total_community_demand):.2f} kW")
         
+        slack_k0 = max(0.0, self.limit - total_community_demand[0])
+        for pkg in final_approved_data:
+            pkg["community_slack_k0"] = slack_k0
+
+
         if not agreed:        
             final_approved_data = house_data_packages
 
