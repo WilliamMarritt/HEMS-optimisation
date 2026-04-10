@@ -11,7 +11,10 @@ from community_controller import CommunityController
 
 alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
-num_simulations = 20
+
+# alphas = [0.15]
+# sigmas = [0.75]
+num_simulations = 5
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -37,48 +40,77 @@ def run_single_simulation(params):
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
 
         step_smart_import = 0.0
+        step_smart_export = 0.0
+
         step_open_import = 0.0
+        step_open_export = 0.0
 
         for house in houses:
             sched = next(s for s in approved_schedules if s["house_id"] == house.house_id)
             house.execute_physical_action(sched, step)
-            step_smart_import = house.history_E.get(("Grid_Import", step), 0.0)
-            step_open_import += house.calculate_open_loop_demand(step)
-
+            
+            step_smart_export += house.history_E.get(("Grid_Export", step), 0.0)
+            step_smart_import += house.history_E.get(("Grid_Import", step), 0.0)
+            
+            abs_t = step % total_steps
+            pv_gen = house.pv_capacity * solar_profile[abs_t]
+            
+            open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
+            step_open_import += open_import
+            step_open_export += open_export
+        
         max_smart_peak = max(max_smart_peak, step_smart_import)
         max_open_peak = max(max_open_peak, step_open_import)
-        total_smart_cost += step_smart_import * price_grid_elec[step % total_steps] * delta
-        total_open_cost += step_open_import * price_grid_elec[step % total_steps] * delta
+        
+        price_in = price_grid_elec[step % total_steps]
+        price_out = price_grid_export[step % total_steps]
+        
+        total_smart_cost += (step_smart_import * price_in * delta) - (step_smart_export * price_out * delta)
+        total_open_cost += (step_open_import * price_in * delta) - (step_open_export * price_out * delta)
 
     
 
 
     community_total_sla_score = 0.0
-    sim_steps_run = len(houses[0].history_T_in) 
+    sim_steps_run = 48 # Hardcoded to your 24h pareto run
 
     for house in houses:
         total_tasks = 0.0
         fulfilled_tasks = 0.0
         
-        # Flexible Appliances (EV) 
+        # 1. Flexible Appliances (EV) 
         ev_appliance = next((app for app in house.personal_appliances if app["name"] == "Electric car"), None)
         if ev_appliance is not None:
+            # Check if the charging window crosses midnight
+            ts = ev_appliance.get("T_S", 0.0)
+            tf = ev_appliance.get("T_F", 0.0)
+            crosses_midnight = tf < ts 
+            
             ev_req = ev_appliance.get("Required_Energy", 0.0)
-            if ev_req > 0:
-                ev_delivered = sum(house.history_E.get(("Electric car", s), 0.0) * delta for s in range(sim_steps_run))
+            
+            # Only grade the EV if it was supposed to finish BEFORE midnight
+            if ev_req > 0 and not crosses_midnight:
+                ev_delivered = house.flexible_energy_delivered.get("Electric car", 0.0)
                 total_tasks += 1.0
                 fulfilled_tasks += min(1.0, ev_delivered / ev_req)
                 
-        # Standard Appliances
+        # 2. Standard Appliances
         for app in house.personal_appliances:
             if app.get("power_type") == "flexible": 
                 continue
-            total_tasks += 1.0
-            if any(house.history_E.get((app["name"], s), 0) > 0 for s in range(sim_steps_run)):
-                fulfilled_tasks += 1.0
                 
-        # Thermal Comfort 
-        avg_temp = sum(house.history_T_in) / sim_steps_run if sim_steps_run > 0 else 0
+            ts = app.get("T_S", 0.0)
+            tf = app.get("T_F", 0.0)
+            crosses_midnight = tf < ts
+            
+            # Only grade appliances that finish before midnight
+            if not crosses_midnight:
+                total_tasks += 1.0
+                if any(house.history_E.get((app["name"], s), 0) > 0 for s in range(sim_steps_run)):
+                    fulfilled_tasks += 1.0
+                
+        # 3. Thermal Comfort 
+        avg_temp = sum(house.history_T_in) / len(house.history_T_in) if house.history_T_in else 0
         
         total_tasks += 1.0
         if avg_temp >= 18.0:
@@ -93,14 +125,14 @@ def run_single_simulation(params):
 
     avg_community_sla = community_total_sla_score / num_homes
 
-    cost_saving_pct = ((total_open_cost - total_smart_cost) / max(0.1, total_open_cost)) * 100
-    peak_reduction_pct = ((max_open_peak - max_smart_peak) / max(0.1, max_open_peak)) * 100
+    cost_saving_pct = (total_open_cost - total_smart_cost) / total_open_cost * 100
+    peak_reduction_pct = (max_open_peak - max_smart_peak) / max_open_peak * 100
 
     return {'Sigma': sigma, 'Alpha': alpha, 'Seed': seed_val, 'Cost_Saving': cost_saving_pct, 'Peak_Reduction': peak_reduction_pct, 'SLA': avg_community_sla}
 
 
 if __name__ == '__main__':
-    csv_file = 'test.csv'
+    csv_file = 'test3.csv'
     completed_runs = set()
     cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA']
     if os.path.exists(csv_file):

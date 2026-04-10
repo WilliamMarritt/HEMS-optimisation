@@ -10,7 +10,7 @@ def vprint(*args, **kwargs):
 # Community Settings
 num_homes = 5
 homes = range(num_homes)
-I_max = 7.5
+I_max = 5
 
 # Simulation Time Settings
 delta = 0.5

@@ -16,6 +16,7 @@ class HouseAgent:
         self.battery_capacity = battery_capacity
 
         self.current_soc =  S_init
+        self.open_soc = S_init
         self.current_soc_th = 0.25 * C_TH
         self.appliances_already_run = {app["name"]: False for app in appliances}
         self.history_E = {}
@@ -116,13 +117,11 @@ class HouseAgent:
                 if (adjusted_tf_temp - new_ts) < min_flat_window:
                     new_tf = (new_ts + min_flat_window) % 24.0
                     
-                    # --- INJECTION 2: Actually save the widened deadline ---
                     app["T_F"] = new_tf 
 
             # Handle widnows that cross midnight
             adjusted_tf = new_tf if new_tf >= new_ts else new_tf + 24.0
             
-            # --- INJECTION 3: Safe latest_start calculation ---
             if app.get("power_type") == "flexible":
                 # The user must plug it in with enough time to do a slow, flat charge
                 latest_start = adjusted_tf - min_flat_window
@@ -427,7 +426,7 @@ class HouseAgent:
                 total_cost += 5000 * E_deficit[app["name"]]
 
 
-        terminal_value_rate = 0.15
+        terminal_value_rate = 0.08
         # Lowered so the battery will prioritize Agile prices over perfect flatness
         final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1]) + (0.1 * P_max_local) + (1.5 * P_max_flex)        
         model += final_objective 
@@ -537,8 +536,9 @@ class HouseAgent:
             else:
                 dumb_hp_power = 0.0
 
-            current_demand = self.calculate_open_loop_demand(current_step)
-                
+            abs_t = current_step % total_steps
+            current_demand = self.personal_elec_demand[abs_t] + dumb_hp_power + 0.27 # Base + HP + Fridge/Freezer (0.135 * 2)
+
             # Add power for appliances starting right now
             for name in starting_appliances:
                 app_info = next(a for a in self.personal_appliances if a["name"] == name)
@@ -549,12 +549,16 @@ class HouseAgent:
                 
             # Add power for appliances that are already running from previous steps
             for app in self.personal_appliances:
-                # Skip uncontrolled again
                 if not app.get('deferrable', True):
                     continue
 
                 name = app["name"]
-                duration_steps = int(app["human_duration_hours"] * steps_per_hour)
+                
+                app_dur = app.get("human_duration_hours", 0.0)
+                if app_dur == 0.0 and app.get("Max_Power", 0.0) > 0:
+                    app_dur = app.get("Required_Energy", 0.0) / app.get("Max_Power", 1.0)
+                    
+                duration_steps = int(app_dur * steps_per_hour)
                 power = app.get("Power", app.get("Max_Power", 0.0))
                 
                 for past_k in range(1, duration_steps):
@@ -565,8 +569,7 @@ class HouseAgent:
                             flexible_powers_fallback[name] = power
                         break 
                         
-            # 3. Calculate Grid Imports (Demand minus whatever the solar panels are currently producing)
-            current_import = max(0, current_demand - local_solar_gen[0])
+            current_import = max(0.0, current_demand - local_solar_gen[0])
             non_optimal_profile[0] = current_import
 
 
@@ -593,71 +596,105 @@ class HouseAgent:
             }
         # Empty RAM
 
-    def calculate_open_loop_demand(self, current_step):
+    def calculate_open_loop_demand(self, current_step, pv_gen=0.0):
         # Calculate the total electricity demand of the house as if it had no smart controls.
         # This is the "dumb" baseline against which the smart system's performance is compared.
         abs_t = current_step % total_steps
-        open_loop_demand = self.personal_elec_demand[abs_t]
+        gross_open_demand = self.personal_elec_demand[abs_t]
         
         # Instead of sharing the Smart House's thermometer calculate the exact physical energy required to maintain the target temperature.
         # A dumb house's bang-bang thermostat averages out to exactly this continuous load:
         local_T_out = current_ambient_temp_profile[abs_t]
         dumb_hp_elec_power = max(0.0, (UA * (T_target - local_T_out)) / COP)
-        open_loop_demand += dumb_hp_elec_power
-
+        gross_open_demand += dumb_hp_elec_power
         self.history_E[("Open_Loop_Heat_Pump", current_step)] = dumb_hp_elec_power
-
 
         # Define the current time interval for checking appliance overlaps.
         step_start_hour = (current_step % total_steps) * delta
         step_end_hour = step_start_hour + delta
 
+    
         # A dumb house plugs the EV in immediately and blasts it at Max Power.
         for app in self.personal_appliances:
-            app_start = app["human_start_hour"]
-            app_dur = app["human_duration_hours"]
+            # EVs sometimes use "arrival_time" instead of "human_start_hour", so we use .get() fallbacks
+            app_start = app.get("human_start_hour", app.get("arrival_time", 0.0))
+            
+            # Dynamically determine Power and Duration
+            if app["name"] == "Electric car":
+                power = 7.0  # Standard 7.0 kW home charger
+                req_energy = app.get("Required_Energy", 0.0)
+                app_dur = req_energy / power if power > 0 else 0.0
+            else:
+                power = app.get("Power", app.get("Max_Power", 0.0))
+                # Try duration first, if missing, calculate it from Required Energy
+                app_dur = app.get("human_duration_hours", 0.0)
+                if app_dur == 0.0 and power > 0:
+                    app_dur = app.get("Required_Energy", 0.0) / power
+
+            # If the appliance doesn't exist today, skip it
+            if power == 0.0 or app_dur == 0.0:
+                continue
+
             app_end = app_start + app_dur
-
-            # Determine the power draw based on the appliance type.
-            power = app["Power"] if app.get("power_type") == "constant" else app.get("Max_Power", 0.0)
-
             total_overlap_hours = 0.0
 
-            # Check for overlaps across midnight by testing three 24-hour windows.
+            # Calculate exact overlap within this 30-minute time step
             for shift in [-24.0, 0.0, 24.0]:
                 s_start = app_start + shift
                 s_end = app_end + shift
-
-                # Calculate the duration of overlap between the appliance's run time and the current step.
                 overlap = max(0.0, min(step_end_hour, s_end) - max(step_start_hour, s_start))
                 total_overlap_hours += overlap
 
             # Calculate the average power consumed by the appliance during this time step.
             average_power_for_step = (power * total_overlap_hours) / delta
-            open_loop_demand += average_power_for_step
-
+            gross_open_demand += average_power_for_step
             self.history_E[(f"Open_Loop_{app['name']}", current_step)] = average_power_for_step
-            
-        dumb_fridge_power = 0.135
-        dumb_freezer_power = 0.135
-        open_loop_demand += (dumb_fridge_power + dumb_freezer_power)
+
+        open_fridge_power = 0.135
+        open_freezer_power = 0.135
+        gross_open_demand += (open_freezer_power + open_fridge_power)
+
+        self.history_E[("Open_Loop_Fridge", current_step)] = open_fridge_power
+        self.history_E[("Open_Loop_Freezer", current_step)] = open_freezer_power
+
+        # Battery logic: excess solar in, discharge when demand high
+        net_load = gross_open_demand - pv_gen
+
+        open_loop_import = 0.0
+        open_loop_export = 0.0
+
+        if net_load < 0: # Excess solar
+            excess = abs(net_load)
+            charge_amount = min(excess, G_E, (C_E - self.open_soc) / nu_E)
+            self.open_soc += charge_amount * nu_E * delta
+
+            open_loop_export = excess - charge_amount
+
+        elif net_load > 0: 
+            discharge_amount = min(net_load, D_E, self.open_soc * nu_E)
+            self.open_soc -= (discharge_amount/nu_E) * delta
+
+            open_loop_import = net_load - discharge_amount
         
-        self.history_E[("Open_Loop_Fridge", current_step)] = dumb_fridge_power
-        self.history_E[("Open_Loop_Freezer", current_step)] = dumb_freezer_power
+        return open_loop_import, open_loop_export
+       
+        
+        
         
         return open_loop_demand
     
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
-
-        open_loop_demand = self.calculate_open_loop_demand(current_step)
-        
+       
         # Calculate Unsmart Grid Import (Demand minus whatever the solar is doing right now)
         abs_t = current_step % total_steps
         solar_gen = self.pv_capacity * solar_profile[abs_t]
-        open_loop_import = max(0.0, open_loop_demand - solar_gen)
+
+        open_loop_import, open_loop_export = self.calculate_open_loop_demand(current_step, solar_gen)
         
         self.history_E[("Open_Loop_Import", current_step)] = open_loop_import
+        self.history_E[("Open_Loop_Export", current_step)] = open_loop_export
+
         self.daily_total_uncontrolled_energy += open_loop_import * delta
 
         self.current_T_in = accepted_schedule.get("next_T_in_calculation", self.current_T_in)

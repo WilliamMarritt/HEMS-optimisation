@@ -61,11 +61,18 @@ def run_simulation():
             net_import = house.history_E.get(("Grid_Import", step), 0.0)
             solar_export = house.history_E.get(("Grid_Export", step), 0.0)
 
+
             step_true_community_import += (net_import - solar_export)
-            step_open_community_demand += house.history_E.get(("Open_Loop_Import", step), 0.0)
+
+            pv_gen = house.history_E.get(("PV_Generation", step), 0.0)
+            open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
+            
+            house.history_E[("Open_Loop_Import", step)] = open_import
+            house.history_E[("Open_Loop_Export", step)] = open_export
+            
+            step_open_community_demand += open_import
 
         step_true_community_import = max(0.0, step_true_community_import)
-
         history_community_demand.append(step_true_community_import)
         history_actual_community_demand.append(step_open_community_demand)
 
@@ -109,7 +116,7 @@ def run_simulation():
             ev_req = ev_appliance.get("Required_Energy", 0.0)
             if ev_req > 0:
                 # Sum the exact kW pulled at every step * 0.5 hours (delta)
-                ev_delivered = sum(house.history_E.get(("Electric car", s), 0.0) * delta for s in range(sim_steps_run))
+                ev_delivered = house.flexible_energy_delivered.get("Electric car", 0.0)                
                 total_tasks += 1.0
                 fulfilled_tasks += min(1.0, ev_delivered / ev_req)
 
@@ -176,6 +183,8 @@ def run_simulation():
             ev_delivered = house.flexible_energy_delivered.get("Electric car", 0.0)
             ev_req = next((app["Required_Energy"] for app in appliances if app["name"] == "Electric car"), 0.0)
             vprint(f"    - EV Charge Delivered: {ev_delivered:.2f} kWh / {ev_req:.2f} kWhn")
+        else:
+            vprint(f"    - EV Charge Delivered: (Car not used today)")
         vprint(f"    - Comprehensive Service Level (SLA): {house_sla_pct:.1f}%\n")
 
     uncontrolled_community_peak = max(history_actual_community_demand)
@@ -204,11 +213,14 @@ def run_simulation():
         price_in = price_grid_elec[step % total_steps]
         price_out = price_grid_export[step % total_steps]
         
-        step_dumb_import = sum(h.history_E.get(("Open_Loop_Import", step), 0.0) for h in houses)
+        step_open_import = sum(h.history_E.get(("Open_Loop_Import", step), 0.0) for h in houses)
+        step_open_export = sum(h.history_E.get(("Open_Loop_Export", step), 0.0) for h in houses)
+
         step_smart_import = sum(h.history_E.get(("Grid_Import", step), 0.0) for h in houses)
         step_smart_export = sum(h.history_E.get(("Grid_Export", step), 0.0) for h in houses)
         
-        total_uncontrolled_cost += step_dumb_import * price_in * delta
+        total_uncontrolled_cost += (step_open_import * price_in * delta) - (step_open_export * price_out * delta)
+        total_uncontrolled_cost += step_open_import * price_in * delta
         total_controlled_cost += (step_smart_import * price_in * delta) - (step_smart_export * price_out * delta)
         total_controlled_export_kwh += step_smart_export * delta
 
