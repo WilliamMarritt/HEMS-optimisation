@@ -93,11 +93,19 @@ def run_single_simulation(params):
             
             ev_req = ev_appliance.get("Required_Energy", 0.0)
             
-            # Only grade the EV if it was supposed to finish BEFORE midnight
-            if ev_req > 0 and not crosses_midnight:
+            if ev_req > 0:
                 ev_delivered = house.flexible_energy_delivered.get("Electric car", 0.0)
                 total_tasks += 1.0
-                fulfilled_tasks += min(1.0, ev_delivered / ev_req)
+                
+                # If it's a 24-hour simulation, the EV might only be halfway through its charging window 
+                # when the simulation ends at step 48. We should grade it proportionally
+                expected_progress = min(1.0, (sim_steps_run - ts) / ((tf + 48) - ts) if crosses_midnight else 1.0)
+                target_energy_by_end_of_sim = ev_req * expected_progress
+                
+                if target_energy_by_end_of_sim > 0:
+                    fulfilled_tasks += min(1.0, ev_delivered / target_energy_by_end_of_sim)
+                else:
+                    fulfilled_tasks += 1.0 # If it hasn't plugged in yet, it hasn't failed
                 
         # 2. Standard Appliances
         for app in house.personal_appliances:
@@ -176,7 +184,7 @@ if __name__ == '__main__':
                 # Append single row to CSV immediately
                 pd.DataFrame([res], columns=cols).to_csv(csv_file, mode='a', header=False, index=False)
                 
-                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: £{res['Cost_Saving']:.2f | SLA: {res['SLA']:>5.2f}")
+                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: £{res['Cost_Saving']:.2f | SLA: {res['SLA']:>5.2f}}")
             except Exception as exc:
                 print(f"A simulation crashed: {exc}")
 
