@@ -177,6 +177,7 @@ class HouseAgent:
         y = pulp.LpVariable.dicts(f"Discharge_Rate_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         I = pulp.LpVariable.dicts(f"Grid_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         I_excess = pulp.LpVariable.dicts(f"Excess_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='continuous')
+        I_excess_eff = pulp.LpVariable.dicts(f"Excess_Eff_Import_H{self.house_id}", mpc_steps, lowBound=0, cat='Continuous')
         I_export = pulp.LpVariable.dicts(f"Grid Export", mpc_steps, lowBound=0)
         # binary state (1 = Importing, 0 = Exporting)
         Z_grid = pulp.LpVariable.dicts(f"Grid_State_H{self.house_id}", mpc_steps, cat='Binary')
@@ -234,7 +235,8 @@ class HouseAgent:
         for k in mpc_steps:
             model += y[k] <= D_E, f"Discharge_Rate_Limit{k}"
             model += z[k] <= G_E, f"Charge_Limit{k}"
-            model += I[k] <= self.house_limit +  I_excess[k], f"Grid_limit_{k}"
+            model += I[k] <= self.house_limit + I_excess[k], f"Grid_limit_{k}"
+            model += I[k] <= effective_limit +  I_excess_eff[k], f"Grid_limit_eff_{k}"
 
             M = 20.0  # Safe physical wire limit in kW
             model += I[k] <= M * Z_grid[k], f"Max_Import_State_{k}"
@@ -423,6 +425,7 @@ class HouseAgent:
             delta * (I[k] * (local_prices[k] + community_penalty_prices[k])) -
             delta * (I_export[k] * local_export_prices[k]) +  
             (1000 * I_excess[k]) +      # penalty for going over 1kW battery will no save itself for the 35p peak
+            (100 * I_excess_eff[k]) +   # soft penalty for encroaching on the chance constraint margin
             (200 * Reserve_deficit[k]) +
             (5.0 * diff[k]) + 
             delta * (y[k] * wear_cost_elec) + 

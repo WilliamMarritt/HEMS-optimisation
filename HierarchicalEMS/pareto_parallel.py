@@ -38,7 +38,7 @@ def run_single_simulation(params):
     max_open_peak = 0.0
     total_open_cost = 0.0
     total_open_net_energy = 0.0 
-    # NEW METRICS
+
     open_breach_count = 0
     open_breach_energy = 0.0
 
@@ -60,7 +60,9 @@ def run_single_simulation(params):
             abs_t = step % total_steps
             pv_gen = house.pv_capacity * solar_profile[abs_t]
 
-            open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
+            open_import = house.history_E.get(("Open_Loop_Import", step), 0.0)
+            open_export = house.history_E.get(("Open_Loop_Export", step), 0.0)
+            
             step_open_import += open_import
             step_open_export += open_export
         
@@ -86,9 +88,13 @@ def run_single_simulation(params):
         total_smart_net_energy += (step_smart_import - step_smart_export) * delta
         total_open_net_energy += (step_open_import - step_open_export) * delta
 
-    net_energy_delta = total_smart_net_energy - total_open_net_energy
+    smart_end_soc = sum(house.current_soc for house in houses)
+    open_end_soc = sum(house.open_soc for house in houses)
+    soc_delta = smart_end_soc - open_end_soc
     average_price = sum(price_grid_elec[:48]) / 48.0
-    total_smart_cost -= (net_energy_delta * average_price)
+
+    net_energy_delta = total_smart_net_energy - total_open_net_energy
+    total_smart_cost -= (soc_delta * average_price)
 
     community_total_sla_score = 0.0
     sim_steps_run = 48 
@@ -127,9 +133,9 @@ def run_single_simulation(params):
             if not window_opens_in_sim:
                 continue
 
-        total_tasks += 1.0
-        if any(house.history_E.get((app["name"], s), 0) > 0 for s in range(sim_steps_run)):
-            fulfilled_tasks += 1.0     
+            total_tasks += 1.0
+            if any(house.history_E.get((app["name"], s), 0) > 0 for s in range(sim_steps_run)):
+                fulfilled_tasks += 1.0     
 
         # 3. Thermal Comfort 
         avg_temp = sum(house.history_T_in) / len(house.history_T_in) if house.history_T_in else 0
@@ -157,7 +163,7 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'Pareto_5house_20_sim_5kw2.csv'
+    csv_file = 'pareto_google.csv'
     completed_runs = set()
 
     cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA', 
