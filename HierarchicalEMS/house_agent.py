@@ -700,7 +700,7 @@ class HouseAgent:
        
         # Calculate Unsmart Grid Import (Demand minus whatever the solar is doing right now)
         abs_t = current_step % total_steps
-        solar_gen = self.pv_capacity * solar_profile[abs_t]
+        solar_gen = self.pv_capacity * solar_profile[abs_t] * efficiency
 
         open_loop_import, open_loop_export = self.calculate_open_loop_demand(current_step, solar_gen)
         
