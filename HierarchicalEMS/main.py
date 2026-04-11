@@ -11,9 +11,10 @@ import random
 
 
 
+
 def run_simulation():
     # locks the random shifting to a specific repeatable timeline
-    random.seed(1)
+    random.seed(0)
 
     print("Initialising Microgrid Community")
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]    
@@ -60,16 +61,14 @@ def run_simulation():
         for house in houses:
             net_import = house.history_E.get(("Grid_Import", step), 0.0)
             solar_export = house.history_E.get(("Grid_Export", step), 0.0)
-
-
             step_true_community_import += (net_import - solar_export)
 
-            pv_gen = house.history_E.get(("PV_Generation", step), 0.0)
-            open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
-            
-            house.history_E[("Open_Loop_Import", step)] = open_import
-            house.history_E[("Open_Loop_Export", step)] = open_export
-            
+            # pv_gen = house.history_E.get(("PV_Generation", step), 0.0)
+            # open_import, open_export = house.calculate_open_loop_demand(step, pv_gen)
+            # house.history_E[("Open_Loop_Import", step)] = open_import
+            # house.history_E[("Open_Loop_Export", step)] = open_export
+            open_import = house.history_E.get(("Open_Loop_Import", step), 0.0)
+            open_export = house.history_E.get(("Open_Loop_Export", step), 0.0)
             step_open_community_demand += open_import
 
         step_true_community_import = max(0.0, step_true_community_import)
@@ -220,7 +219,6 @@ def run_simulation():
         step_smart_export = sum(h.history_E.get(("Grid_Export", step), 0.0) for h in houses)
         
         total_uncontrolled_cost += (step_open_import * price_in * delta) - (step_open_export * price_out * delta)
-        total_uncontrolled_cost += step_open_import * price_in * delta
         total_controlled_cost += (step_smart_import * price_in * delta) - (step_smart_export * price_out * delta)
         total_controlled_export_kwh += step_smart_export * delta
 

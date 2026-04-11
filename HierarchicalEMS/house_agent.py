@@ -25,7 +25,7 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.15                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.alpha = 0.1                       # Define risk tolerance, 0.05 = 95% guarantee of safety
         self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
@@ -151,8 +151,8 @@ class HouseAgent:
             if not self.history_E.get((app["name"], total_steps -1 ), 0) == 1:
                 self.appliances_already_run[app["name"]] = False
         ev = next((a for a in self.personal_appliances if a["name"] == "Electric car"), None)
-        if ev:
-            print(f"--> House {self.house_id} EV Window: Plugs in at {ev['T_S']:.2f}, Needs full by {ev['T_F']:.2f}. Energy needed: {ev.get('Required_Energy', 0)} kWh")
+        # if ev:
+        #     print(f"--> House {self.house_id} EV Window: Plugs in at {ev['T_S']:.2f}, Needs full by {ev['T_F']:.2f}. Energy needed: {ev.get('Required_Energy', 0)} kWh")
 
     def generate_proposed_schedule(self, current_step, community_penalty_prices):
         # Lower level solver
@@ -194,10 +194,17 @@ class HouseAgent:
         P_comp_fz = pulp.LpVariable.dicts(f"Freezer_Comp_Power_H{self.house_id}", mpc_steps, lowBound=0.0, upBound=0.3, cat='Continuous')
         P_max_local = pulp.LpVariable(f"Peak_Import_H{self.house_id}", lowBound=0, cat='Continuous') 
         P_max_flex = pulp.LpVariable(f"Peak_Flex_H{self.house_id}", lowBound=0, cat='Continuous')
+
         # Chance constraint setup
         # Calculate the Z-score using the Inverse Cumulative Distribution Function
         z_score = stats.norm.ppf(1- self.alpha)
         safety_margin = z_score * self.sigma_human
+
+        safety_margin_kw = z_score * self.sigma_human
+        safety_reserve_kwh = safety_margin_kw * delta
+
+        base_soc_floor = 0.05 * self.battery_capacity       # always keep a little bit regardless of sigma
+        dynamic_soc_min = min(self.battery_capacity, base_soc_floor + safety_reserve_kwh)
 
         # Chance Constraint implementation
         # Shrink the house limit by the safety margin, if the margin is larger than the limit, floor it to prevent negative
@@ -227,7 +234,7 @@ class HouseAgent:
         for k in mpc_steps:
             model += y[k] <= D_E, f"Discharge_Rate_Limit{k}"
             model += z[k] <= G_E, f"Charge_Limit{k}"
-            model += I[k] <= effective_limit +  I_excess[k], f"Dynamic_limit_{k}"
+            model += I[k] <= self.house_limit +  I_excess[k], f"Grid_limit_{k}"
 
             M = 20.0  # Safe physical wire limit in kW
             model += I[k] <= M * Z_grid[k], f"Max_Import_State_{k}"
@@ -245,10 +252,9 @@ class HouseAgent:
             # The £1.50 objective penalty will now force the EV and Heat Pump to flatten
             model += flex_sum + P_HP[k] <= P_max_flex, f"Track_Flex_Peak_{k}"
             # The battery is forced to keep enough energy to survive a 30-minute spike
-            reserve_hours = 1.0
-            target_soc = (safety_margin * reserve_hours) / nu_E
-            model += S_E[k] >= target_soc - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
-
+           
+            model += S_E[k] >= dynamic_soc_min - Reserve_deficit[k], f"Soft_Safety_Reserve_k{k}"
+            
             # Storage Dynamics
             if k == 0:
                 model += S_E[0] == self.current_soc + (nu_E * delta * z[0]) - (delta * y[0] / nu_E)
@@ -430,15 +436,14 @@ class HouseAgent:
                 total_cost += 5000 * E_deficit[app["name"]]
 
 
-        terminal_value_rate = 0
+        terminal_value_rate = 00.8
         # Lowered so the battery will prioritize Agile prices over perfect flatness
         final_objective = total_cost - (terminal_value_rate * S_E[horizon - 1]) + (0.1 * P_max_local) + (10 * P_max_flex)        
         model += final_objective 
 
     
         # Terminal Region
-        terminal_target_soc = (safety_margin * reserve_hours) / nu_E
-        model += S_E[horizon - 1] >= terminal_target_soc, "Terminal_Region_Lower_Bound"
+        model += S_E[horizon - 1] >= dynamic_soc_min, "Terminal_Region_Lower_Bound"
         
         model += T_in[horizon - 1] >= T_min, "Terminal_Thermal_Region"
 
@@ -456,7 +461,7 @@ class HouseAgent:
             current_discharge = pulp.value(y[0])
             current_export = pulp.value(I_export[0])
             next_soc = pulp.value(S_E[0])
-            if next_soc < terminal_target_soc:
+            if next_soc < dynamic_soc_min:
                 vprint(f"House {self.house_id} [Step {current_step}]: MPC intentionally planned to drop SoC to {next_soc:.2f} kWh")
 
             if current_discharge > 0 and community_penalty_prices[0] > 0:
@@ -576,6 +581,8 @@ class HouseAgent:
             current_import = max(0.0, current_demand - local_solar_gen[0])
             non_optimal_profile[0] = current_import
 
+            del model
+
 
             return {
                 "house_id": self.house_id,
@@ -685,8 +692,6 @@ class HouseAgent:
         
         
         
-        return open_loop_demand
-    
     def execute_physical_action(self, accepted_schedule, current_step):
         # Updates the physical state of the house to move forward in time
        
