@@ -163,7 +163,7 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_google.csv'
+    csv_file = 'pareto_google2.csv'
     completed_runs = set()
 
     cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA', 
