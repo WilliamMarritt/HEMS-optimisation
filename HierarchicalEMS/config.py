@@ -1,7 +1,7 @@
 # Contains constants and system parameters
 
 # config.py
-verbose = True
+verbose = False
 
 def vprint(*args, **kwargs):
     if verbose:

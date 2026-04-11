@@ -88,13 +88,13 @@ def run_single_simulation(params):
         total_smart_net_energy += (step_smart_import - step_smart_export) * delta
         total_open_net_energy += (step_open_import - step_open_export) * delta
 
-    smart_end_soc = sum(house.current_soc for house in houses)
-    open_end_soc = sum(house.open_soc for house in houses)
-    soc_delta = smart_end_soc - open_end_soc
-    average_price = sum(price_grid_elec[:48]) / 48.0
+    # smart_end_soc = sum(house.current_soc for house in houses)
+    # open_end_soc = sum(house.open_soc for house in houses)
+    # soc_delta = smart_end_soc - open_end_soc
+    # average_price = sum(price_grid_elec[:48]) / 48.0
 
-    net_energy_delta = total_smart_net_energy - total_open_net_energy
-    total_smart_cost -= (soc_delta * average_price)
+    # net_energy_delta = total_smart_net_energy - total_open_net_energy
+    # total_smart_cost -= (soc_delta * average_price)
 
     community_total_sla_score = 0.0
     sim_steps_run = 48 
@@ -163,7 +163,7 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_google2.csv'
+    csv_file = 'pareto_google3.csv'
     completed_runs = set()
 
     cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA', 
