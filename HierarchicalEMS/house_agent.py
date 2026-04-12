@@ -54,7 +54,7 @@ class HouseAgent:
 
         self.rogue_spikes_timeline = [
             random.choice([1.5, 2.5, 3.5]) if random.random() < 0.10 else 0.0
-            for _ in range(total_steps * 2)
+            for _ in range(total_steps * 14)
         ]    
 
         self.noise = [random.uniform(-0.05, 0.05) for _ in range(48)]
@@ -63,7 +63,7 @@ class HouseAgent:
 
         
 
-    def randomise_daily_appliances(self):
+    def randomise_daily_appliances(self, current_step=0):
         # Generate a fresh schedule for each day
         # Appliance window variance and continuous-time random allocation
         # Decide which appliances run based on probability of occurence
@@ -82,7 +82,7 @@ class HouseAgent:
             if app.get("power_type") == "constant":
                 duration_steps = int(app["Slots"])
                 for past_k in range(1, duration_steps + 1):
-                    past_t = total_steps - past_k
+                    past_t = current_step - past_k
                     if self.history_E.get((name, past_t), 0) == 1:
                         is_mid_cycle = True
                         break
@@ -161,7 +161,7 @@ class HouseAgent:
 
 
         if current_step > 0 and current_step % total_steps == 0:
-            self.randomise_daily_appliances()
+            self.randomise_daily_appliances(current_step)
 
             for app_name in self.appliances_already_run:
                 self.appliances_already_run[app_name]= False
