@@ -14,7 +14,7 @@ sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
 # alphas = [0.15]
 # sigmas = [0.75]
-num_simulations = 5  
+num_simulations = 20  
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -42,7 +42,7 @@ def run_single_simulation(params):
     open_breach_count = 0
     open_breach_energy = 0.0
 
-    for step in range(48): 
+    for step in range(48*7): 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
 
         step_smart_import = 0.0
@@ -88,13 +88,13 @@ def run_single_simulation(params):
         total_smart_net_energy += (step_smart_import - step_smart_export) * delta
         total_open_net_energy += (step_open_import - step_open_export) * delta
 
-    # smart_end_soc = sum(house.current_soc for house in houses)
-    # open_end_soc = sum(house.open_soc for house in houses)
-    # soc_delta = smart_end_soc - open_end_soc
-    # average_price = sum(price_grid_elec[:48]) / 48.0
+    smart_end_soc = sum(house.current_soc for house in houses)
+    open_end_soc = sum(house.open_soc for house in houses)
+    soc_delta = smart_end_soc - open_end_soc
+    average_price = sum(price_grid_elec[:48]) / 48.0
 
-    # net_energy_delta = total_smart_net_energy - total_open_net_energy
-    # total_smart_cost -= (soc_delta * average_price)
+    net_energy_delta = total_smart_net_energy - total_open_net_energy
+    total_smart_cost -= (soc_delta * average_price)
 
     community_total_sla_score = 0.0
     sim_steps_run = 48 
@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     for sigma in sigmas:
         sort_id = np.argsort(results[sigma]['alphas'])
-        for key in ['alphas', 'costs', 'peaks', 'slas']:
+    for key in ['alphas', 'costs', 'peaks', 'slas', 'count_reduction', 'energy_reduction']:
             results[sigma][key] = [results[sigma][key][i] for i in sort_id]
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
