@@ -749,14 +749,14 @@ class HouseAgent:
                     if hp_power > 0:
                         shedded_hp = min(excess_demand, hp_power)
                         excess_demand -= shedded_hp
-                        print(f"    [RTAS] H{self.house_id} Shed {shedded_hp:.2f}kW of Heat Pump for {spike_duration*60:.0f} mins")
+                        vprint(f"    [RTAS] H{self.house_id} Shed {shedded_hp:.2f}kW of Heat Pump for {spike_duration*60:.0f} mins")
 
                     for name, pwr in flex_apps.items():
                         if excess_demand > 0.01 and pwr > 0:
                             shed = min(excess_demand, pwr)
                             shedded_flex[name] = shed
                             excess_demand -= shed
-                            print(f"  [RTAS] H{self.house_id} Shed {shed:.2f}kW of {name} for {spike_duration*60:.0f} mins")
+                            vprint(f"  [RTAS] H{self.house_id} Shed {shed:.2f}kW of {name} for {spike_duration*60:.0f} mins")
                     
             # Battery outputs (planned + emergency). Flex apps draw (planned - shed)
             # Battery output (planned) Flex apps draw (planned)
