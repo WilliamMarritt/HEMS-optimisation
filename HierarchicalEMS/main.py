@@ -224,8 +224,8 @@ def run_simulation():
 
     fridge_violations = sum(1 for t in history_h0_fridge_temp if t > 5.5)
 
-
-    print(f"{'\n\nPerformance Metric':<35} | {'Uncontrolled Grid':<11} | {'Smart Grid':<11}")
+    header = '\n\nPerformance Metric'   # < Python 3.12 does not support \ in f strings
+    print(f"{header:<35} | {'Uncontrolled Grid':<11} | {'Smart Grid':<11}")
     print("-" * 65)
     print("Grid Stability")
     print(f"  Absolute Peak Demand (kW)         | {uncontrolled_community_peak:<11.2f} | {controlled_community_peak:<11.2f}")
