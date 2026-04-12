@@ -97,7 +97,7 @@ def run_single_simulation(params):
     total_smart_cost -= (soc_delta * average_price)
 
     community_total_sla_score = 0.0
-    sim_steps_run = 48 
+    sim_steps_run = 48*7
 
     for house in houses:
         total_tasks = 0.0
@@ -163,7 +163,7 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_google3.csv'
+    csv_file = 'pareto_google_10house_7day.csv'
     completed_runs = set()
 
     cols = ['Sigma', 'Alpha', 'Seed', 'Cost_Saving', 'Peak_Reduction', 'SLA', 
@@ -223,8 +223,8 @@ if __name__ == '__main__':
 
     for sigma in sigmas:
         sort_id = np.argsort(results[sigma]['alphas'])
-    for key in ['alphas', 'costs', 'peaks', 'slas', 'count_reduction', 'energy_reduction']:
-            results[sigma][key] = [results[sigma][key][i] for i in sort_id]
+        for key in ['alphas', 'costs', 'peaks', 'slas', 'count_reduction', 'energy_reduction']:
+                results[sigma][key] = [results[sigma][key][i] for i in sort_id]
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#cc08b2"] 
