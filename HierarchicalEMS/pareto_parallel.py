@@ -12,11 +12,11 @@ import pickle
 
 
 
-# alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
-# sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
+alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
+sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
-alphas = [0.30]
-sigmas = [0.75]
+# alphas = [0.30]
+# sigmas = [0.75]
 num_simulations = 1 
 
 def run_single_simulation(params):
