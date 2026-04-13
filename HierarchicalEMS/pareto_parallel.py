@@ -268,7 +268,7 @@ if __name__ == '__main__':
                 with open(cache_file, 'wb') as f:
                     pickle.dump(all_cache, f)
                 
-                print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Peak: {res['Peak_Reduction']:>5.2f} kW | Cost: {res['Cost_Saving']:.2f} | SLA: {res['SLA']:>5.2f}")
+                    print(f"Done -> Alpha: {res['Alpha']:<4} | Sigma: {res['Sigma']:<4} | Seed: {res['Seed']:<2} | Breaches (S/O): {res['Smart_Breach_Count']}/{res['Open_Breach_Count']} | Energy (S/O): {res['Smart_Breach_Energy']:.2f}/{res['Open_Breach_Energy']:.2f} | Peak Red: {res['Peak_Reduction']:>5.2f}%")
             except Exception as exc:
                 print(f"A simulation crashed: {exc}")
 
