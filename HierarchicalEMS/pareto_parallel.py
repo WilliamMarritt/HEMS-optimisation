@@ -154,7 +154,7 @@ def run_single_simulation(params):
     total_smart_cost -= ((smart_end_soc - open_end_soc) * (sum(price_grid_elec[:48]) / 48.0))
 
     community_total_sla_score = 0.0
-    sim_steps_run = 48
+    sim_steps_run = 48 * days
 
        
     for house in houses:
