@@ -222,8 +222,8 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'test.csv'
-    cache_file = 'simulation_cache.pkl'
+    csv_file = 'pareto_2day_10house_10kW.csv'
+    cache_file = 'simulation_cache_1.pkl'
     all_cache = {}
     completed_runs = set()
 
