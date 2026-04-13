@@ -17,7 +17,7 @@ sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
 # alphas = [0.30]
 # sigmas = [0.75]
-num_simulations = 1 
+num_simulations = 20 
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
