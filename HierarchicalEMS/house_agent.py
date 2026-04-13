@@ -25,7 +25,7 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.1                       # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.alpha = 0.3                      # Define risk tolerance, 0.05 = 95% guarantee of safety
         self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0

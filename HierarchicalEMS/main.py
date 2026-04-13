@@ -8,12 +8,57 @@ from visualisation import plot_simulation_results
 from data import *  
 import json
 import random
+import pickle
 
+PLAYBACK_MODE = True
+PLAYBACK_ALPHA = 0.30   
+PLAYBACK_SIGMA = 0.75   
+PLAYBACK_SEED = 0
+CACHE_FILE = 'simulation_cache.pkl'
 
 
 
 def run_simulation():
     # locks the random shifting to a specific repeatable timeline
+    if PLAYBACK_MODE:
+        print(f"Loading data for Alpha={PLAYBACK_ALPHA}, Sigma={PLAYBACK_SIGMA}, Seed={PLAYBACK_SEED} from cache")
+        try:
+            with open(CACHE_FILE, 'rb') as f:
+                all_cache = pickle.load(f)
+        except:
+            print("Error: File not found")
+            return
+        
+        cache_key = (PLAYBACK_ALPHA, PLAYBACK_SIGMA, PLAYBACK_SEED)
+        if cache_key not in all_cache:
+            print(f"Error: Combination {cache_key} not found in cache data")
+            return
+    
+        data = all_cache[cache_key]
+        print("Data Loaded")
+
+        plot_simulation_results(
+            community_demand=data['community_demand'],
+            dumb_appliance_data=data['dumb_appliance_data'],
+            h0_dumb_heat_pump=data['h0_dumb_heat_pump'],
+            transformer_limit=I_max,
+            h0_soc=data['h0_soc'],
+            grid_prices=price_grid_elec, 
+            appliance_data=data['appliance_data'],
+            h0_import=data['h0_import'],
+            h0_discharge=data['h0_discharge'],
+            h0_solar=data['h0_solar'],
+            h0_charge=data['h0_charge'],
+            h0_fridge_temp=data['h0_fridge_temp'],
+            h0_freezer_temp=data['h0_freezer_temp'],
+            community_actual_demand=data['community_actual_demand'],
+            h0_heat_pump=data['h0_heat_pump'],
+            h0_thermal_storage=data['h0_thermal_storage'],
+            h0_indoor_temp=data['h0_indoor_temp'],
+            all_houses_import=data['all_houses_import']
+        )
+        return
+
     random.seed(0)
 
     print("Initialising Microgrid Community")
