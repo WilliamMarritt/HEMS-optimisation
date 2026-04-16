@@ -25,7 +25,7 @@ class HouseAgent:
         self.current_T_fridge = 4.0
         self.current_T_freezer = -18.0
 
-        self.alpha = 0.3                      # Define risk tolerance, 0.05 = 95% guarantee of safety
+        self.alpha = 0.1                      # Define risk tolerance, 0.05 = 95% guarantee of safety
         self.sigma_human = 0.75           # ~ 0.75 kW standard deviation
 
         self.daily_total_uncontrolled_energy = 0.0
@@ -59,7 +59,15 @@ class HouseAgent:
 
         self.noise = [random.uniform(-0.05, 0.05) for _ in range(48)]
 
-        self.randomise_daily_appliances()
+        self.all_days_appliances = []
+        for i in range(days):
+            self.randomise_daily_appliances()
+            self.all_days_appliances.append(copy.deepcopy(self.personal_appliances))
+
+        self.personal_appliances = copy.deepcopy(self.all_days_appliances[0])
+        
+            
+
 
         
 
@@ -161,7 +169,25 @@ class HouseAgent:
 
 
         if current_step > 0 and current_step % total_steps == 0:
-            self.randomise_daily_appliances(current_step)
+            day_id = (current_step // total_steps) % len(self.all_days_appliances)
+            new_day = copy.deepcopy(self.all_days_appliances[day_id])
+            
+            for old_app in self.personal_appliances:
+                name = old_app["name"]
+                is_mid_cycle = False
+
+                if old_app.get("power_type") == "flexible":
+                    is_mid_cycle = self.flexible_energy_delivered.get(name, 0.0) > 0.0
+                elif old_app.get("power_type") == "constant":
+                    duration = int(old_app.get("Slots", 0))
+                    is_mid_cycle = any(self.history_E.get((name, current_step - k), 0) == 1 for k in range(1, duration + 1))
+                
+                if is_mid_cycle:
+                    # Overwrite the new random appliance with the one currently running
+                    new_day = [old_app if app["name"] == name else app for app in new_day]
+
+            self.personal_appliances = new_day
+            self.uncontrolled_appliances = [app for app in self.personal_appliances if not app.get('deferrable', True)]
 
             for app_name in self.appliances_already_run:
                 self.appliances_already_run[app_name]= False
@@ -606,7 +632,7 @@ class HouseAgent:
                 "rogue_power_k0": rogue_power,
                 "heat_pump_power_k0": dumb_hp_power,
                 "flexible_powers_k0": flexible_powers_fallback,
-                "next_T_in_calculation": 20.0
+                "next_T_in_calculation": self.current_T_in
             }
         # Empty RAM
 
@@ -615,6 +641,9 @@ class HouseAgent:
         # This is the "dumb" baseline against which the smart system's performance is compared.
         abs_t = current_step % total_steps
         gross_open_demand = self.personal_elec_demand[abs_t]
+
+        # Add the unpredicted rogue human loads to the dumb baseline
+        gross_open_demand += self.rogue_spikes_timeline[current_step]
         
         # Instead of sharing the Smart House's thermometer calculate the exact physical energy required to maintain the target temperature.
         # A dumb house's bang-bang thermostat averages out to exactly this continuous load:

@@ -1,7 +1,7 @@
 # Contains constants and system parameters
 
 # config.py
-verbose = False
+verbose = True
 
 def vprint(*args, **kwargs):
     if verbose:
@@ -11,6 +11,8 @@ def vprint(*args, **kwargs):
 num_homes = 10
 homes = range(num_homes)
 I_max = 10
+days = 2    # number of days sim runs for
+
 
 # Simulation Time Settings
 delta = 0.5

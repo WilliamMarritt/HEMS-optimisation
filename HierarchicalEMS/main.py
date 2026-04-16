@@ -10,11 +10,11 @@ import json
 import random
 import pickle
 
-PLAYBACK_MODE = True
-PLAYBACK_ALPHA = 0.30   
-PLAYBACK_SIGMA = 0.75   
+PLAYBACK_MODE = False
+PLAYBACK_ALPHA = 0.01
+PLAYBACK_SIGMA = 0.75
 PLAYBACK_SEED = 0
-CACHE_FILE = 'simulation_cache.pkl'
+CACHE_FILE = 'simulation_cache_extended.pkl'
 
 
 

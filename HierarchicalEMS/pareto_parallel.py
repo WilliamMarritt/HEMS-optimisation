@@ -62,9 +62,15 @@ def run_single_simulation(params):
     open_breach_count = 0
     open_breach_energy = 0.0
 
-    days = 2
 
     for step in range(48*days): 
+        # Deterministically generate Day 2+ appliances in the main thread
+        if step > 0 and step % total_steps == 0:
+            for house in houses:
+                house.randomise_daily_appliances(step)
+                for app_name in house.appliances_already_run:
+                    house.appliances_already_run[app_name] = False
+
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
 
         step_smart_import = 0.0
@@ -294,7 +300,7 @@ if __name__ == '__main__':
         if s_cost > 0:
             required_N = ((Z * s_cost) / E) ** 2
             print(f"To guarantee a smooth Margin of Error of +/- {E}%")
-            print(f"need to run at least {required_N:.0f} simulations per configuration")
+            print(f"must run at least {required_N:.0f} simulations per configuration")
         else: 
             print("Error")
         
