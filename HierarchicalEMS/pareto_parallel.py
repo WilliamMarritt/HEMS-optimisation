@@ -17,7 +17,7 @@ sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
 # alphas = [0.30]
 # sigmas = [0.75]
-num_simulations = 20 
+num_simulations = 5 
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -228,8 +228,8 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_2day_10house_10kW_extended.csv'
-    cache_file = 'simulation_cache_1.pkl'
+    csv_file = 'pareto_2day_10house_10kW_extended2.csv'
+    cache_file = 'simulation_cache_2.pkl'
     all_cache = {}
     completed_runs = set()
 
