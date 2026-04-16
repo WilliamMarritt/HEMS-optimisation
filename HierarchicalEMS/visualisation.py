@@ -57,7 +57,7 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
     
     lines_1, labels_1 = ax1_top.get_legend_handles_labels()
     lines_2, labels_2 = ax1_price.get_legend_handles_labels()
-    ax1_top.legend(lines_1 + lines_2, labels_1 + labels_2, bbox_to_anchor=(1.03, 1), loc='upper left', borderaxespad=0.)
+    ax1_top.legend(lines_1 + lines_2, labels_1 + labels_2, bbox_to_anchor=(1.07, 1), loc='upper left', borderaxespad=0.)
 
     if h0_solar is not None and h0_soc is not None:
         ax1_bottom.plot(time_axis_hours, h0_solar, label="H0 Solar Input (kW)", color='gold', linewidth=2)
@@ -73,7 +73,7 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
 
         lines_b1, labels_b1 = ax1_bottom.get_legend_handles_labels()
         lines_b2, labels_b2 = ax1_soc.get_legend_handles_labels()
-        ax1_bottom.legend(lines_b1 + lines_b2, labels_b1 + labels_b2, bbox_to_anchor=(1.03, 1), loc='upper left', borderaxespad=0.)
+        ax1_bottom.legend(lines_b1 + lines_b2, labels_b1 + labels_b2, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 
 
     # SLIDE 2: Power Dispatch

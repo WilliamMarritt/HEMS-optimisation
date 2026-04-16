@@ -60,6 +60,7 @@ def run_simulation():
         return
 
     random.seed(0)
+    simulation_steps = 96
 
     print("Initialising Microgrid Community")
     houses = [HouseAgent(i, PV_capacity, C_E, I_max / num_homes) for i in range(num_homes)]    
@@ -76,10 +77,6 @@ def run_simulation():
     h0_discharge = []
     h0_charge = []
     h0_solar = []
-    
-
- 
-    simulation_steps = 96
 
     print(f"Starting simulation for {num_homes} homes over {simulation_steps} steps")
     start_time = time.time()
@@ -88,6 +85,7 @@ def run_simulation():
         vprint(f"Time Step {step}")
 
         approved_schedules, peak_demand = community.negotiate_schedules(houses, step)
+
         # Calculate total community slack
         total_planned_import = sum(sched["planned_import_k0"] for sched in approved_schedules)
         global_slack = max(0.0, I_max - total_planned_import)
@@ -138,7 +136,6 @@ def run_simulation():
             app_text = f"  | Starting Appliances: {apps}" if apps else ""
             vprint(f"    House 0 Status: {h0_sched['explainability']} (Battery: {houses[0].current_soc:.2f} kWh){app_text}")
 
-        
         vprint("-" * 25)
 
     end_time = time.time()
@@ -300,16 +297,6 @@ def run_simulation():
         print("Success: the limit was protected")
     else:
         print("WARNING: the community breached the limit.")
-
-    print("\nSaving simulation data to disk...")
-    save_data = {
-        "community_demand": history_community_demand,
-        "h0_soc": history_h0_soc
-    }
-    with open("simulation_results.json", "w") as f:
-        json.dump(save_data, f, indent=4)
-    print("Data saved to 'simulation_results.json'")
-
     print("\nGenerating visuals")
     
     appliance_data = {
@@ -320,9 +307,6 @@ def run_simulation():
     # Keep tracking the fridge now removed from appliances dictionary in data.py
     appliance_data["Fridge"] = {'counts': [0] * simulation_steps, 'power': [0.0] * simulation_steps}
     appliance_data["Freezer"] = {'counts': [0] * simulation_steps, 'power': [0.0] * simulation_steps}
-
-
-
    
     for t in range(simulation_steps):
         for app in appliances:
@@ -363,8 +347,6 @@ def run_simulation():
                 appliance_data[name]['power'][t] = exact_power
 
             
-          
-
         fridge_power = 0.0
         freezer_power = 0.0
         #
@@ -378,8 +360,6 @@ def run_simulation():
         appliance_data["Freezer"]['counts'][t] = 1 if freezer_power > 0 else 0
         appliance_data["Freezer"]['power'][t] = freezer_power
     
-
-
     # Sort appliances for better visualisation (most used at the bottom)
     sorted_appliances = sorted(appliance_data.items(), key=lambda item: sum(item[1]['counts']), reverse=True) 
     
@@ -422,8 +402,6 @@ def run_simulation():
         for app in appliances:
             dumb_appliance_data[app["name"]][t] = houses[0].history_E.get((f"Open_Loop_{app['name']}", t), 0.0)
             
-
-
     plot_simulation_results(
         community_demand=history_community_demand,
         dumb_appliance_data=dumb_appliance_data,

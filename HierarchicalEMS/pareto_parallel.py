@@ -12,8 +12,8 @@ import pickle
 
 
 
-alphas = [0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]
-sigmas = [0.0, 0.05, 0.10, 0.15, 0.25, 0.35, 0.50, 0.60, 0.75, 0.90]
+alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
+sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
 # alphas = [0.30]
 # sigmas = [0.75]
@@ -222,7 +222,7 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_2day_10house_10kW.csv'
+    csv_file = 'pareto_2day_10house_10kW_extended.csv'
     cache_file = 'simulation_cache_1.pkl'
     all_cache = {}
     completed_runs = set()
@@ -276,6 +276,31 @@ if __name__ == '__main__':
 
     final_df = pd.read_csv(csv_file)
     
+    # Statistical power analysis: using worst case for worst noise
+    test_alpha = 0.1
+    test_sigma = 0.75
+
+    test_config = final_df[(np.isclose(final_df['Alpha'], test_alpha)) & (np.isclose(final_df['Sigma'], test_sigma))]
+
+    if not test_config.empty and len(test_config) > 1:
+        # calculate standrd devitation across the seeds
+        s_cost = test_config['Cost_Saving'].std()
+        s_peak = test_config['Peak_Reduction'].std()
+        print(f"Testing Config Alpha={test_alpha}, Sigma={test_sigma} over {len(test_config)} seeds")
+        print(f"Current stnadard deviation (Cost savings): {s_cost:.2f}")
+        
+        Z = 1.96    # Z score for 95% confidence
+        E = 0.5     # Margin of error
+        if s_cost > 0:
+            required_N = ((Z * s_cost) / E) ** 2
+            print(f"To guarantee a smooth Margin of Error of +/- {E}%")
+            print(f"need to run at least {required_N:.0f} simulations per configuration")
+        else: 
+            print("Error")
+        
+
+
+
     overall_avg_open_energy = final_df['Open_Energy'].mean()
     print(f"Overall Average Open Energy across all simulations: {overall_avg_open_energy:.2f} kWh")
 
