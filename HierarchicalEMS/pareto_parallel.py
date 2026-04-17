@@ -12,12 +12,12 @@ import pickle
 
 
 
-alphas = [0.01, 0.05, 0.15, 0.30, 0.50]
+alphas = [0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]
 sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
 
 # alphas = [0.30]
 # sigmas = [0.75]
-num_simulations = 5 
+num_simulations = 20 
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -228,8 +228,8 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_2day_10house_10kW_extended2.csv'
-    cache_file = 'simulation_cache_2.pkl'
+    csv_file = 'pareto_2day_10house_10kW_extended3.csv'
+    cache_file = 'simulation_cache_3.pkl'
     all_cache = {}
     completed_runs = set()
 
