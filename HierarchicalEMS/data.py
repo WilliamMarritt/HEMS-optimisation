@@ -86,4 +86,4 @@ appliances = [
     {'name': 'Electric car',      'prob': 0.43, 'deferrable': True,  'interruptible': True,  'power_type': "flexible", 'T_S': 18, 'T_F': 8,  'Min_Power': 1.4, 'Max_Power': 7.0, 'Required_Energy': 13.5}
 ]
 
-app_names = [a["name"] for a in appliances]
+app_names = [a["name"] for a in appliances] 

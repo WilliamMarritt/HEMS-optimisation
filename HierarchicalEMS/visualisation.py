@@ -58,6 +58,7 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
     lines_1, labels_1 = ax1_top.get_legend_handles_labels()
     lines_2, labels_2 = ax1_price.get_legend_handles_labels()
     ax1_top.legend(lines_1 + lines_2, labels_1 + labels_2, bbox_to_anchor=(1.07, 1), loc='upper left', borderaxespad=0.)
+    # ax1_top.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', borderaxespad=0.)
 
     if h0_solar is not None and h0_soc is not None:
         ax1_bottom.plot(time_axis_hours, h0_solar, label="H0 Solar Input (kW)", color='gold', linewidth=2)
@@ -74,6 +75,7 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
         lines_b1, labels_b1 = ax1_bottom.get_legend_handles_labels()
         lines_b2, labels_b2 = ax1_soc.get_legend_handles_labels()
         ax1_bottom.legend(lines_b1 + lines_b2, labels_b1 + labels_b2, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+        # ax1_bottom.legend(lines_b1 + lines_b2, labels_b1 + labels_b2, loc='upper left', borderaxespad=0.)
 
 
     # SLIDE 2: Power Dispatch
@@ -95,16 +97,17 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
         ax2.grid(True, linestyle=':', alpha=0.6)
 
     # SLIDE 3: Stacked Appliance Schedule
-    colors = cm.tab20.colors
+    colors = cm.tab20.colors[1:6] + cm.tab20.colors[12:14] + cm.tab20.colors[16:18] + cm.tab20.colors[7:8] + cm.tab20.colors[6:7] + cm.tab20.colors[8:10] + cm.tab20.colors[18:20]
     bottom_arr = np.zeros(steps)
     
     if h0_heat_pump is not None and sum(h0_heat_pump) > 0:
-        ax3.bar(time_axis_hours, h0_heat_pump, bottom=bottom_arr, width=0.5, label="Heat Pump", alpha=0.8, align="edge", color="purple")
+        ax3.bar(time_axis_hours, h0_heat_pump, bottom=bottom_arr, width=0.5, label="Heat Pump", alpha=0.8, align="edge", color='#1f77b4')
+        
         bottom_arr += np.array(h0_heat_pump)
 
     for i, (name, power_series) in enumerate(appliance_data.items()):
         if sum(power_series) > 0: 
-            ax3.bar(time_axis_hours, power_series, bottom=bottom_arr, width=0.5, label=name, alpha=0.8, align='edge', color=colors[i % 20])
+            ax3.bar(time_axis_hours, power_series, bottom=bottom_arr, width=0.5, label=name.replace('_', ' '), alpha=0.8, align='edge', color=colors[i % len(colors)])
             bottom_arr += np.array(power_series)
 
     peak_power = max(bottom_arr) if len(bottom_arr) > 0 else 1.0
@@ -215,7 +218,7 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
 
         for i, (name, power_series) in enumerate(dumb_appliance_data.items()):
             if sum(power_series) > 0: 
-                ax7.bar(time_axis_hours, power_series, bottom=bottom_arr_dumb, width=0.5, label=name, alpha=0.8, align='edge', color=colors[i % 20])
+                ax7.bar(time_axis_hours, power_series, bottom=bottom_arr_dumb, width=0.5, label=name, alpha=0.8, align='edge', color=colors[i % len(colors)])
                 bottom_arr_dumb += np.array(power_series)
 
         peak_power_dumb = max(bottom_arr_dumb) if len(bottom_arr_dumb) > 0 else 1.0
@@ -276,4 +279,127 @@ def plot_simulation_results(community_demand,  dumb_appliance_data=None, h0_dumb
     fig._bprev = bprev
     fig._bnext = bnext
 
+    plt.show()
+
+def plot_report_figure(community_actual_demand, community_demand, transformer_limit, 
+                    grid_prices, h0_solar, h0_soc, appliance_data, h0_heat_pump, 
+                    all_houses_import):
+    """
+    Generates a combined 4-pane plot formatted specifically for an A4 report.
+    Moves ONLY the second legend to avoid overlap, keeping others tight for maximum width.
+    """
+    # Force Matplotlib to use size 8 globally and DEBOLD everything
+    plt.rcParams.update({
+        'font.size': 8,
+        'axes.labelsize': 8,
+        'axes.labelweight': 'normal',  
+        'axes.titleweight': 'normal',  
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 8
+    })
+
+    steps = len(community_demand)
+    time_axis_hours = np.arange(steps) / 2.0
+    x_ticks = np.arange(0, max(time_axis_hours) + 3, 3)
+
+    # Use 11-inch width to give plenty of room for wide graphs and legends
+    fig, axes = plt.subplots(4, 1, figsize=(11, 8.5), sharex=True)
+    
+    # right=0.75 stretches graphs wide while leaving enough 'gutter' for the legends
+    plt.subplots_adjust(left=0.07, right=0.75, top=0.95, bottom=0.08, hspace=0.20)
+    
+    # Two different anchors:
+    standard_anchor = (1.02, 1)  # Tight against the graph
+    shifted_anchor = (1.15, 1)   # Pushed right to clear the Price label on Graph 2
+
+    # ==========================================
+    # Graph 1: Community Import vs Limits
+    # ==========================================
+    ax1 = axes[0]
+    if community_actual_demand is not None:
+        l1 = ax1.plot(time_axis_hours, community_actual_demand, color='purple', linewidth=1.5, alpha=0.5, label="Uncontrolled Demand")
+    else: l1 = []
+    l2 = ax1.plot(time_axis_hours, community_demand, color='blue', linewidth=1.5, label="Controlled Import")
+    l3 = ax1.axhline(y=transformer_limit, color='red', linestyle='--', linewidth=1.5, label=f"Limit ({transformer_limit} kW)")
+    ax1.set_ylabel('Power (kW)')
+    
+    # Uses STANDARD anchor
+    ax1.legend(l1 + l2 + [l3], [l.get_label() for l in (l1 + l2 + [l3])], 
+               bbox_to_anchor=standard_anchor, loc='upper left')
+    
+    # ==========================================
+    # Graph 2: House 0 Solar/SoC (Left) vs Price (Right)
+    # ==========================================
+    ax2 = axes[1]
+    if h0_solar is not None and h0_soc is not None:
+        ax2_price = ax2.twinx()
+        l5 = ax2.plot(time_axis_hours, h0_solar, color='gold', linewidth=1.5, label='Solar Input')
+        l6 = ax2.plot(time_axis_hours, h0_soc, color='green', linewidth=1.5, label='Battery SoC')
+        ax2.set_ylabel('Solar (kW) / SoC (kWh)', color='black')
+        ax2.set_ylim(ymin=0)
+
+        extended_prices = [grid_prices[i % len(grid_prices)] for i in range(steps)]
+        l7 = ax2_price.plot(time_axis_hours, extended_prices, color='darkviolet', linestyle='-', linewidth=1.5, label="Grid Price")
+        ax2_price.set_ylabel('Price (£/kWh)', color='black')
+        
+        # Uses SHIFTED anchor to avoid overlapping the 'Price (£/kWh)' text
+        lines_2 = l5 + l6 + l7
+        ax2.legend(lines_2, [l.get_label() for l in lines_2], 
+                   bbox_to_anchor=shifted_anchor, loc='upper left')
+        
+    # ==========================================
+    # Graph 3: House 0 Appliances (Stacked Bar)
+    # ==========================================
+    ax3 = axes[2]
+    colors = cm.tab20.colors[1:6] + cm.tab20.colors[12:14] + cm.tab20.colors[16:18] + cm.tab20.colors[7:8] + cm.tab20.colors[6:7] + cm.tab20.colors[8:10] + cm.tab20.colors[18:20]
+    bottom_arr = np.zeros(steps)
+    if h0_heat_pump is not None and sum(h0_heat_pump) > 0:
+        ax3.bar(time_axis_hours, h0_heat_pump, bottom=bottom_arr, width=0.5, label="Heat Pump", alpha=0.8, align="edge", color='#1f77b4')
+        bottom_arr += np.array(h0_heat_pump)
+
+    for i, (name, power_series) in enumerate(appliance_data.items()):
+        if sum(power_series) > 0: 
+            display_name = name.replace('_', ' ')
+            if "Unpredicted" in display_name or "human" in display_name.lower():
+                display_name = "Unpredicted Load"  
+            ax3.bar(time_axis_hours, power_series, bottom=bottom_arr, width=0.5, label=display_name, alpha=0.8, align='edge', color=colors[i % len(colors)])
+            bottom_arr += np.array(power_series)
+
+    ax3.set_ylim(0, max(bottom_arr) * 1.2 if len(bottom_arr) > 0 else 1.0) 
+    ax3.set_ylabel('Power (kW)')
+    
+    # Uses STANDARD anchor
+    ax3.legend(bbox_to_anchor=standard_anchor, loc='upper left', ncol=2, columnspacing=0.8)    
+    
+    # ==========================================
+    # Graph 4: Community Import Breakdown (Stacked)
+    # ==========================================
+    ax4 = axes[3]
+    if all_houses_import is not None:
+        bottom_import = np.zeros(steps)
+        num_houses = len(all_houses_import)
+        cmap = plt.get_cmap('turbo')
+        house_colors = [cmap(i / num_houses) for i in range(num_houses)]        
+        for i, house_import in enumerate(all_houses_import):
+            ax4.bar(time_axis_hours, house_import, bottom=bottom_import, width=0.5, label=f"House {i}", align='edge', color=house_colors[i % len(house_colors)], alpha=0.85)
+            bottom_import += np.array(house_import)
+            
+        ax4.axhline(y=transformer_limit, color='red', linestyle='--', linewidth=1.5, label=f"Limit ({transformer_limit} kW)")
+        ax4.set_ylabel('Grid Import (kW)')
+        ax4.set_xlabel('Time (Hours)')
+        
+        # Uses STANDARD anchor
+        ax4.legend(bbox_to_anchor=standard_anchor, loc='upper left', ncol=2)
+        
+    # ==========================================
+    # Global Formatting
+    # ==========================================
+    ax4.set_xticks(x_ticks)
+    ax4.set_xlim(0, max(time_axis_hours))
+    for ax in axes:
+        ax.grid(True, linestyle=':', alpha=0.6)
+        ax.tick_params(axis='both', which='major')
+
+    plt.savefig("Report_Figure_A4.png", dpi=300, bbox_inches='tight')
     plt.show()

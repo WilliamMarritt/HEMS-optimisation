@@ -4,15 +4,15 @@ import time
 from config import *
 from house_agent import HouseAgent
 from community_controller import CommunityController
-from visualisation import plot_simulation_results
+from visualisation import *
 from data import *  
 import json
 import random
 import pickle
 
-PLAYBACK_MODE = False
-PLAYBACK_ALPHA = 0.01
-PLAYBACK_SIGMA = 0.75
+PLAYBACK_MODE = True
+PLAYBACK_ALPHA = 0.15
+PLAYBACK_SIGMA = 0.25
 PLAYBACK_SEED = 0
 CACHE_FILE = 'simulation_cache_extended.pkl'
 
@@ -57,6 +57,21 @@ def run_simulation():
             h0_indoor_temp=data['h0_indoor_temp'],
             all_houses_import=data['all_houses_import']
         )
+
+        plot_report_figure(
+            community_actual_demand=data['community_actual_demand'],
+            community_demand=data['community_demand'],
+            transformer_limit=I_max,
+            grid_prices=price_grid_elec, 
+            h0_solar=data['h0_solar'],
+            h0_soc=data['h0_soc'],
+            appliance_data=data['appliance_data'],
+            h0_heat_pump=data['h0_heat_pump'],
+            all_houses_import=data['all_houses_import']
+        )
+
+
+       
         return
 
     random.seed(0)
@@ -422,6 +437,28 @@ def run_simulation():
         h0_indoor_temp=houses[0].history_T_in,  
         all_houses_import=all_houses_import        
     )
+
+    plot_report_figure(
+        community_demand=data['community_demand'],
+        dumb_appliance_data=data['dumb_appliance_data'],
+        h0_dumb_heat_pump=data['h0_dumb_heat_pump'],
+        transformer_limit=I_max,
+        h0_soc=data['h0_soc'],
+        grid_prices=price_grid_elec, 
+        appliance_data=data['appliance_data'],
+        h0_import=data['h0_import'],
+        h0_discharge=data['h0_discharge'],
+        h0_solar=data['h0_solar'],
+        h0_charge=data['h0_charge'],
+        h0_fridge_temp=data['h0_fridge_temp'],
+        h0_freezer_temp=data['h0_freezer_temp'],
+        community_actual_demand=data['community_actual_demand'],
+        h0_heat_pump=data['h0_heat_pump'],
+        h0_thermal_storage=data['h0_thermal_storage'],
+        h0_indoor_temp=data['h0_indoor_temp'],
+        all_houses_import=data['all_houses_import']
+    )
+
 
 if __name__ == "__main__":
     run_simulation()

@@ -9,7 +9,7 @@ from data import *
 from house_agent import HouseAgent
 from community_controller import CommunityController
 import pickle
-
+import math
 
 
 alphas = [0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]
@@ -291,9 +291,11 @@ if __name__ == '__main__':
     if not test_config.empty and len(test_config) > 1:
         # calculate standrd devitation across the seeds
         s_cost = test_config['Cost_Saving'].std()
+        cv_cost = (test_config['Cost_Saving'].std() / test_config['Cost_Saving'].mean()) * 100          # standard deviation as a percentage
         s_peak = test_config['Peak_Reduction'].std()
         print(f"Testing Config Alpha={test_alpha}, Sigma={test_sigma} over {len(test_config)} seeds")
-        print(f"Current stnadard deviation (Cost savings): {s_cost:.2f}")
+        print(f"Current stnadard deviation (Cost savings): {cv_cost:.2f}%")
+        print(f"Current Standard Error of the Mean (Cost savings): {s_cost/math.sqrt(20):.2f}")
         
         Z = 1.96    # Z score for 95% confidence
         E = 0.5     # Margin of error
@@ -339,68 +341,81 @@ if __name__ == '__main__':
         for key in ['alphas', 'costs', 'peaks', 'slas', 'count_reduction', 'energy_reduction']:
                 results[sigma][key] = [results[sigma][key][i] for i in sort_id]
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+# Convert 170mm to inches (1 inch = 25.4 mm)
+    size_in_inches = 170 / 25.4
+
+    # Force Matplotlib to use size 8 globally
+    plt.rcParams.update({
+        'font.size': 8,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 8
+    })
+
+    # Set layout to exactly 170mm x 170mm (Square Layout)
+    fig, axes = plt.subplots(2, 2, figsize=(size_in_inches, size_in_inches))
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', "#cc08b2"] 
 
-    # [0, 0] Financial Benefit (Unchanged)
+    # [0, 0] Top-Left: Breach Energy Reduction
     for i, sigma in enumerate(sigmas):
-        axes[0, 0].plot(results[sigma]['alphas'], results[sigma]['costs'], marker='o', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 0].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[0, 0].set_ylabel('Cost Savings vs Dumb House (%)', fontsize=12)
-    axes[0, 0].set_title('Financial Benefit of Smart HEMS', fontsize=14, fontweight='bold')
+        axes[0, 0].plot(results[sigma]['alphas'], results[sigma]['energy_reduction'], 
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
+    axes[0, 0].set_xlabel('Alpha (Risk Tolerance)')
+    axes[0, 0].set_ylabel('Breach Energy Reduction (%)')
     axes[0, 0].grid(True, linestyle='--', alpha=0.7)
-    axes[0, 0].legend()
     axes[0, 0].invert_xaxis()
 
-    # Inserted: [0, 1] Breach Count Reduction
+    # [0, 1] Top-Right: Financial Benefit
     for i, sigma in enumerate(sigmas):
-        axes[0, 1].plot(results[sigma]['alphas'], results[sigma]['count_reduction'], marker='s', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 1].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[0, 1].set_ylabel('Breach Count Reduction (%)', fontsize=12)
-    axes[0, 1].set_title('1kW Breach Frequency Prevention', fontsize=14, fontweight='bold')
+        axes[0, 1].plot(results[sigma]['alphas'], results[sigma]['costs'], 
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
+    axes[0, 1].set_xlabel('Alpha (Risk Tolerance)')
+    axes[0, 1].set_ylabel('Cost Savings vs Dumb House (%)')
     axes[0, 1].grid(True, linestyle='--', alpha=0.7)
-    axes[0, 1].legend()
     axes[0, 1].invert_xaxis()
 
-    # Inserted: [0, 2] Breach Energy Reduction
+    # [1, 0] Bottom-Left: Breach Count Reduction
     for i, sigma in enumerate(sigmas):
-        axes[0, 2].plot(results[sigma]['alphas'], results[sigma]['energy_reduction'], marker='X', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 2].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[0, 2].set_ylabel('Breach Energy Reduction (%)', fontsize=12)
-    axes[0, 2].set_title('1kW Breach Severity Prevention', fontsize=14, fontweight='bold')
-    axes[0, 2].grid(True, linestyle='--', alpha=0.7)
-    axes[0, 2].legend()
-    axes[0, 2].invert_xaxis()
-
-    # [1, 0] SLA / Comfort (Unchanged)
-    for i, sigma in enumerate(sigmas):
-        axes[1, 0].plot(results[sigma]['alphas'], results[sigma]['slas'], marker='d', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 0].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[1, 0].set_ylabel('Community SLA Fulfillment (%)', fontsize=12)
-    axes[1, 0].set_title('User Comfort & Reliability (SLA)', fontsize=14, fontweight='bold')
+        axes[1, 0].plot(results[sigma]['alphas'], results[sigma]['count_reduction'], 
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
+    axes[1, 0].set_xlabel('Alpha (Risk Tolerance)')
+    axes[1, 0].set_ylabel('Breach Count Reduction (%)')
     axes[1, 0].grid(True, linestyle='--', alpha=0.7)
-    axes[1, 0].set_ylim(-5, 105)
-    axes[1, 0].legend()
     axes[1, 0].invert_xaxis()
 
-    # [1, 1] Peak Reduction (Unchanged)
+    # [1, 1] Bottom-Right: SLA / Comfort
     for i, sigma in enumerate(sigmas):
-        axes[1, 1].plot(results[sigma]['alphas'], results[sigma]['peaks'], marker='v', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 1].set_xlabel('Alpha (Risk Tolerance)', fontsize=12)
-    axes[1, 1].set_ylabel('Absolute Peak Reduction (%)', fontsize=12)
-    axes[1, 1].set_title('Max Demand: Absolute Peak Shaving', fontsize=14, fontweight='bold')
+        axes[1, 1].plot(results[sigma]['alphas'], results[sigma]['slas'], 
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
+    axes[1, 1].set_xlabel('Alpha (Risk Tolerance)')
+    axes[1, 1].set_ylabel('Community SLA Fulfilment (%)')
     axes[1, 1].grid(True, linestyle='--', alpha=0.7)
-    axes[1, 1].legend()
     axes[1, 1].invert_xaxis()
 
-    # Changed: [1, 2] Normalized Pareto now compares Cost Savings against Breach Energy Reduction
-    for i, sigma in enumerate(sigmas):
-        axes[1, 2].plot(results[sigma]['costs'], results[sigma]['energy_reduction'], marker='^', linewidth=2, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 2].set_xlabel('Cost Savings (%)', fontsize=12)
-    axes[1, 2].set_ylabel('Breach Energy Reduction (%)', fontsize=12)
-    axes[1, 2].set_title('True Pareto: Economy vs. Grid Security', fontsize=14, fontweight='bold')
-    axes[1, 2].grid(True, linestyle='--', alpha=0.7)
-    axes[1, 2].legend()
+    # --- Perfectly aligned and styled global legend ---
+    
+    # 1. Run tight_layout FIRST so Matplotlib calculates the exact graph positions
+    plt.tight_layout(rect=[0, 0.08, 1, 1])
 
-    plt.tight_layout()
+    # 2. Measure the exact left and right edges of the bottom two graphs
+    left_edge = axes[1, 0].get_position().x0
+    right_edge = axes[1, 1].get_position().x1
+    total_width = right_edge - left_edge
+
+    # Extract the legend handles and labels
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+
+    # 3. Create the legend using 'mode="expand"' to stretch it to our measured width
+    leg = fig.legend(handles, labels, loc='lower center', 
+                     bbox_to_anchor=(left_edge, 0.015, total_width, 0.05), 
+                     ncol=5, mode='expand', borderaxespad=0.,
+                     frameon=True, edgecolor='black', fancybox=False)
+
+    # 4. Force the legend's border line to be as thin as the graph axes (0.8 is standard)
+    leg.get_frame().set_linewidth(0.8)
+    
+    # Save at 300 DPI WITHOUT bbox_inches='tight' to preserve the exact 170mm size
+    plt.savefig('pareto_results_170mm_square_markers.png', dpi=300)
+    
     plt.show()
