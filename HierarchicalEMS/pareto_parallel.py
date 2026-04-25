@@ -13,11 +13,12 @@ import math
 
 
 alphas = [0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]
-sigmas = [0.0, 0.1, 0.25, 0.5, 0.75]
+sigmas = [0.0, 0.1, 0.25, 0.5, 0.75, 1.0]
 
 # alphas = [0.30]
 # sigmas = [0.75]
 num_simulations = 20 
+
 
 def run_single_simulation(params):
     alpha, sigma, seed_val = params
@@ -228,8 +229,8 @@ def run_single_simulation(params):
     }
 
 if __name__ == '__main__':
-    csv_file = 'pareto_2day_10house_10kW_extended3.csv'
-    cache_file = 'simulation_cache_3.pkl'
+    csv_file = 'pareto_2day_10house_10kW_extended4.csv'
+    cache_file = 'simulation_cache_4.pkl'
     all_cache = {}
     completed_runs = set()
 
@@ -360,8 +361,8 @@ if __name__ == '__main__':
     # [0, 0] Top-Left: Breach Energy Reduction
     for i, sigma in enumerate(sigmas):
         axes[0, 0].plot(results[sigma]['alphas'], results[sigma]['energy_reduction'], 
-                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 0].set_xlabel('Alpha (Risk Tolerance)')
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=rf'$\sigma$={sigma} kW')
+    axes[0, 1].set_xlabel(r'$\alpha$ (Risk Tolerance)', fontsize=8)    
     axes[0, 0].set_ylabel('Breach Energy Reduction (%)')
     axes[0, 0].grid(True, linestyle='--', alpha=0.7)
     axes[0, 0].invert_xaxis()
@@ -369,17 +370,17 @@ if __name__ == '__main__':
     # [0, 1] Top-Right: Financial Benefit
     for i, sigma in enumerate(sigmas):
         axes[0, 1].plot(results[sigma]['alphas'], results[sigma]['costs'], 
-                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[0, 1].set_xlabel('Alpha (Risk Tolerance)')
-    axes[0, 1].set_ylabel('Cost Savings vs Dumb House (%)')
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=rf'$\sigma$={sigma} kW')
+    axes[0, 1].set_xlabel(r'$\alpha$ (Risk Tolerance)', fontsize=8)    
+    axes[0, 1].set_ylabel('Cost Savings vs Uncontrolled House (%)')
     axes[0, 1].grid(True, linestyle='--', alpha=0.7)
     axes[0, 1].invert_xaxis()
 
     # [1, 0] Bottom-Left: Breach Count Reduction
     for i, sigma in enumerate(sigmas):
         axes[1, 0].plot(results[sigma]['alphas'], results[sigma]['count_reduction'], 
-                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 0].set_xlabel('Alpha (Risk Tolerance)')
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=rf'$\sigma$={sigma} kW')
+    axes[1, 0].set_xlabel(r'$\alpha$ (Risk Tolerance)', fontsize=8)    
     axes[1, 0].set_ylabel('Breach Count Reduction (%)')
     axes[1, 0].grid(True, linestyle='--', alpha=0.7)
     axes[1, 0].invert_xaxis()
@@ -387,8 +388,8 @@ if __name__ == '__main__':
     # [1, 1] Bottom-Right: SLA / Comfort
     for i, sigma in enumerate(sigmas):
         axes[1, 1].plot(results[sigma]['alphas'], results[sigma]['slas'], 
-                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=f'Sigma={sigma}kW')
-    axes[1, 1].set_xlabel('Alpha (Risk Tolerance)')
+                        marker='s', markersize=3, linewidth=1.0, color=colors[i], label=rf'$\sigma$={sigma} kW')
+    axes[1, 1].set_xlabel(r'$\alpha$ (Risk Tolerance)', fontsize=8)    
     axes[1, 1].set_ylabel('Community SLA Fulfilment (%)')
     axes[1, 1].grid(True, linestyle='--', alpha=0.7)
     axes[1, 1].invert_xaxis()

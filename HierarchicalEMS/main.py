@@ -12,7 +12,7 @@ import pickle
 
 PLAYBACK_MODE = True
 PLAYBACK_ALPHA = 0.15
-PLAYBACK_SIGMA = 0.25
+PLAYBACK_SIGMA = 0.75
 PLAYBACK_SEED = 0
 CACHE_FILE = 'simulation_cache_extended.pkl'
 
@@ -35,7 +35,18 @@ def run_simulation():
             return
     
         data = all_cache[cache_key]
-        print("Data Loaded")
+        # Extract costs safely (using .get() with fallback keys from your pareto script just in case)
+        uncontrolled_cost = data.get('total_uncontrolled_cost', data.get('Open_Cost', 0.0))
+        controlled_cost = data.get('total_controlled_cost', data.get('Smart_Cost', 0.0))
+        savings_pct = data.get('savings_pct', 0.0)
+
+
+        print(f"  Total Energy Cost (£)             | £{uncontrolled_cost:<10.2f} | £{controlled_cost:<10.2f}")
+        
+  
+            
+        print(f"  Cost Savings (%)                  | {'---':<11} | {savings_pct:.1f}%")
+
 
         plot_simulation_results(
             community_demand=data['community_demand'],
